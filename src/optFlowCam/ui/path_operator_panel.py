@@ -79,11 +79,43 @@ class OFC_PT_OptimalPathAdvancedOptionsPanel(bpy.types.Panel):
 
         layout.prop(init_props, "make_path_permanent")
         layout.prop(init_props, "make_frustum_permanent")
+        layout.prop(init_props, "generate_earth_file")
 
+
+class OFC_PT_OptimalPathCompareOptionsPanel(bpy.types.Panel):
+    bl_idname = "OFC_PT_OptimalPathCompareOptionsPanel"
+    bl_parent_id = "OFC_PT_OptimalPathOperatorPanel"
+    bl_label = "Compare Options"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_context = 'objectmode'
+    bl_category = "OptFlowCam"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+
+        init_props = context.scene.OFC.init_props
+
+        """
+        rho_row = layout.row()
+        rho_row.prop(init_props, "rho")
+        reset_rho_operator = rho_row.operator('ofc.reset_property', text="", icon="LOOP_BACK")
+        reset_rho_operator.target = "rho"
+
+        layout.prop(init_props, "make_path_permanent")
+        layout.prop(init_props, "make_frustum_permanent")
+        """
+        layout.prop(init_props, "export_dir")
+        layout.prop(init_props, "generate_earth_file")
+        layout.prop(init_props, "min_scale")
+        layout.prop(init_props, "max_scale")
+        layout.prop(init_props, "n_frames")
 # ------------------------------------------------------------------------------
 
 classes = [OFC_PT_OptimalPathOperatorPanel,
-           OFC_PT_OptimalPathAdvancedOptionsPanel]
+           OFC_PT_OptimalPathAdvancedOptionsPanel,
+           OFC_PT_OptimalPathCompareOptionsPanel]
 
 def register():
     for cl in classes:

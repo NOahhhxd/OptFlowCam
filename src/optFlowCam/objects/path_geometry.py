@@ -23,7 +23,7 @@ def add_path_object(n_points, collection_name, curve_name='CameraCurve'):
 
     return curve_obj
 
-def update_path(path_obj, coords):
+def update_path(path_obj, coords, type="POLY"):
     '''
     Updates the vertices of an existing path object.
     '''
@@ -33,7 +33,7 @@ def update_path(path_obj, coords):
         len(path_obj.data.splines[0].points) != len(coords):
         
         path_obj.data.splines.clear()
-        polyline = path_obj.data.splines.new('POLY')
+        polyline = path_obj.data.splines.new(type)
         polyline.points.add(len(coords)-1)
     
     else:

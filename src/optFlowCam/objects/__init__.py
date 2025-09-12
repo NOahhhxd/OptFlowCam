@@ -1,4 +1,4 @@
-modules = ['camera', 'frustum_geometry', 'path_geometry', 'look_at_camera']
+modules = ['camera', 'frustum_geometry', 'path_geometry', 'look_at_camera', 'render', 'GoogleEarthFile']
 
 from .. import register_modules
 

@@ -19,6 +19,7 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
         ("3DImageFlow", "3DImageFlow", "Optimal spline based on minimizing 3D image flow in camera frustum", "MESH_CUBE", 0),
         ("LookatLinear", "Look-at Interpolation", "Spline based on linearly interpolating the lookat point, position and up vector of the camera", "PARTICLE_TIP", 1),
         ("TransformationsLinear", "Transformation Interpolation", "Spline base on linearly interpolating position, rotation and look-at distance", "CON_ROTLIMIT", 2),
+        ("3DImageFlow2","3DImageFlow Geodesic", "Optimal spline based on minimizing 3D image flow in camera frustum with geodesic view-at path", "MESH_CUBE", 3),
     ]
 
     parametrization_options = [
@@ -72,6 +73,37 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
         name="Make Frustum Available",
         description="Make the frustum geometry of the camera available when confirming the path?",
         default=False)
+
+    generate_earth_file : bpy.props.BoolProperty(
+        name="Generate Earth File",
+        description="Do you wanna compare the different metrics on a sphere shape?",
+        default=False)
+
+    export_dir : bpy.props.StringProperty(
+        name="Exporting Directory",
+        description="Directory to save the generated videos and files",
+        subtype="DIR_PATH",
+        default="")
+
+    min_scale : bpy.props.FloatProperty(
+        name="Min Zoom Scale",
+        description="Minimum zoom factor for random start/end camera.",
+        subtype="FACTOR",
+        default=0.5,
+        min=0.1, max=3)
+
+    max_scale: bpy.props.FloatProperty(
+        name="Max Zoom Scale",
+        description="Maximum zoom factor for random start/end camera.",
+        subtype="FACTOR",
+        default=0.5,
+        min=0.1, max=3)
+
+    n_frames: bpy.props.IntProperty(
+        name="Number of Frames",
+        description="How many frames should the generated clip have?",
+        default=100,
+        min=2)
 
 # ------------------------------------------------------------------------------
 

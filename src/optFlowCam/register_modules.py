@@ -1,6 +1,5 @@
 import sys
 import importlib
-
 import traceback
 
 def get_full_module_names(modules, name):
