@@ -106,11 +106,14 @@ class OFC_PT_OptimalPathCompareOptionsPanel(bpy.types.Panel):
         layout.prop(init_props, "make_path_permanent")
         layout.prop(init_props, "make_frustum_permanent")
         """
+        layout.prop(init_props, "selected_object")
         layout.prop(init_props, "export_dir")
+        layout.prop(init_props, "render_animation")
         layout.prop(init_props, "generate_earth_file")
         layout.prop(init_props, "min_scale")
         layout.prop(init_props, "max_scale")
         layout.prop(init_props, "n_frames")
+
 # ------------------------------------------------------------------------------
 
 classes = [OFC_PT_OptimalPathOperatorPanel,

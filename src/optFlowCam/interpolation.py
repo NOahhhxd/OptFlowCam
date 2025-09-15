@@ -131,15 +131,18 @@ class InterpolateGeodesic:
 
         context = bpy.context
         vl = context.view_layer
+        print("DEBUG:::")
+        print(start_eyepoint, start_view_direction)
+        print(end_eyepoint, end_view_direction)
         obj, start_face_idx, start_loc = self.raycast(start=start_eyepoint, direction=start_view_direction)
-        _, end_face_idx, end_loc = self.raycast(start=end_eyepoint, direction=end_view_direction)
-        print("Wirkliche Punkte: ", start_loc, end_loc)
-        if obj and obj.type == "MESH":
+        obj2, end_face_idx, end_loc = self.raycast(start=end_eyepoint, direction=end_view_direction)
+        # print("Wirkliche Punkte: ", start_loc, end_loc)
+        if obj and obj == obj2 and obj.type == "MESH":
             self.mesh = obj.evaluated_get(vl.depsgraph).to_mesh()
             self.obj = obj
             # [(bpy.data.objects['Sphere'].matrix_world @ i.co) for i in bpy.data.objects['Sphere'].data.vertices]
         else:
-            raise ValueError("Start-/Endkamera muss auf ein Objekt gerichtet sein")
+            raise ValueError("Start-/Endkamera müssen auf dasselbe Objekt gerichtet sein")
         self.distance = None
         self.path = []
         faces = [i.vertices for i in self.mesh.polygons]
@@ -180,11 +183,11 @@ class InterpolateGeodesic:
         end_idx = self.get_idx(end_face_idx, end_loc)
         path = self.find_geodesic_path_between(start_idx, end_idx)
         """
+        ### Idee: Pfad durch BSpline der Punkte interpolieren lassen
         path = self.find_geodesic_path_between(idx, idx + 1)
 
         self.mix_path_with_time(path, start_t, end_t)
         # self.mix_advanced_path_with_time(path, start, start_t, end, end_t, focal)
-        # TODO: Fragen, ob quasi auf Kamera gewartet werden soll
 
     def get_distance(self):
         return self.distance

@@ -11,6 +11,7 @@ from ..utility import cam_to_sample, lookat_path_from_camera_path
 from ..interpolation import interpolate_keyframes
 from random import randint, random
 
+
 def create_cam(position, view, up, scale, focal):
     return {
         "position": [i for i in position],
@@ -20,18 +21,25 @@ def create_cam(position, view, up, scale, focal):
         "focal": focal
     }
 
+
 def get_shortest_bb_diagonal(bounding_box):
     min_length = None
     for i in range(2, len(bounding_box)):
-        length = (Vector(bounding_box[i])-Vector(bounding_box[(i+2)%len(bounding_box)])).length
-        print(length)
+        length = (Vector(bounding_box[i]) - Vector(bounding_box[(i + 2) % len(bounding_box)])).length
         if not min_length or length < min_length:
             min_length = length
     return min_length
 
+
+def create_cam_2(vertex, matrix, focal, scale_base, min_scale, max_scale):
+    dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
+    direction = -vertex.normal
+    look_at_position = matrix @ vertex.co
+    position = look_at_position - direction * dist * focal
+    return create_cam(position, direction, (-direction[1], direction[0], 0), focal, scale_base)
+
+
 def create_cams(object_mesh, matrix, min_scale, max_scale):
-    # pos = matrix@vertex.co + vertex.normal * (8 + random() * 4)
-    # copy from params-fucntion: pos = lookat - scale * focal * view
     vertices = object_mesh.data.vertices
     start_idx = randint(0, len(vertices) - 1)
     while (end_idx := randint(0, len(vertices) - 1)) == start_idx:
@@ -39,31 +47,32 @@ def create_cams(object_mesh, matrix, min_scale, max_scale):
 
     start_vert = vertices[start_idx]
     end_vert = vertices[end_idx]
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD', location=matrix @ start_vert.co,scale=(.1, .1, .1))
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD', location=matrix @ end_vert.co,scale=(.1, .1, .1))
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD', location=matrix @ start_vert.co,
+                                         scale=(.1, .1, .1))
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD', location=matrix @ end_vert.co,
+                                         scale=(.1, .1, .1))
 
-    scale_base = get_shortest_bb_diagonal(object_mesh.bound_box)/2
-    start_dist = scale_base * ((max_scale - min_scale)*random()+min_scale)
-    end_dist = scale_base * ((max_scale - min_scale)*random()+min_scale)
-    focal = 1.3888888888888888
-    start_cam = create_cam(matrix@start_vert.co - start_dist * focal * -start_vert.normal,-start_vert.normal, (-start_vert.normal[1], -start_vert.normal[0], 0) ,scale_base, focal)
-    end_cam = create_cam(matrix@end_vert.co - end_dist * focal * -end_vert.normal,-end_vert.normal, (-end_vert.normal[1], -end_vert.normal[0], 0) ,scale_base, focal)
-    return start_cam,end_cam
-    # TODO: scale-factor variable
     # Faktor im Verhältnis der Diagonale der BB (z.B. 1-3)
-    # BB berechnen: https://blender.stackexchange.com/questions/223858/how-do-i-get-the-bounding-box-of-all-objects-in-a-scene
-    # pos = matrix@vertex.co - 1 * focal * view
-    # up = (-view[1], view[0], 0)
-    """
-    cam = {
-        "position": [i for i in pos],
-        "view": [i for i in view],
-        "up": [i for i in up],
-        "frustum_scale": 1,
-        "focal": focal
-    }
-    return cam
-    """
+    scale_base = get_shortest_bb_diagonal(object_mesh.bound_box) / 2
+    focal = 1.3888888888888888
+    start_cam = create_cam_2(start_vert, matrix, focal, scale_base, min_scale, max_scale)
+    end_cam = create_cam_2(end_vert, matrix, focal, scale_base, min_scale, max_scale)
+
+    return start_cam, end_cam
+
+
+def is_triangle_mesh(mesh):
+    if len(mesh.polygons) == 0:
+        return False
+    min_face_count, max_face_count = 4, 2
+    for face in mesh.polygons:
+        n_vertices = len(face.vertices)
+        if n_vertices < min_face_count:
+            min_face_count = n_vertices
+        if n_vertices > max_face_count:
+            max_face_count = n_vertices
+    return max_face_count == 3 and min_face_count == max_face_count
+
 
 class OFC_OT_InterpolateCamera(bpy.types.Operator):
     # custom ID
@@ -140,6 +149,7 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
     # the "update" method of the operator
     def modal(self, context, event):
         return self.generate_random_cam(context, event)
+
     """
         if event.type in {'ESC'}:
             self.quit(context)
@@ -271,13 +281,13 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
             path = add_path_object(2, random_coll_name, random_cam_path)
             paths.append(path)
 
-
         # op_props = context.scene.OFC.op_props
         props = context.scene.OFC.init_props
 
         # read properties
-        move_around_object = bpy.context.selected_objects[0]  ### TODO: props.object
-        generate_earth_file = props.generate_earth_file #True ### TODO: props.google_earth_file
+        move_around_object = props.selected_object  # bpy.context.selected_objects[0]
+        render_animation = props.render_animation
+        generate_earth_file = props.generate_earth_file
         exporting_path = props.export_dir
         min_scale = props.min_scale
         max_scale = props.max_scale
@@ -290,12 +300,19 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
         vl = context.view_layer
 
         # add cams to scene
-        mesh = move_around_object.evaluated_get(vl.depsgraph).to_mesh()
+        if move_around_object.type != 'MESH':
+            self.report({'ERROR_INVALID_INPUT'}, "Selected object must be a triangle mesh")
+            self.quit(context)
+            return {'CANCELLED'}
 
-        assert len(mesh.polygons) > 0 and len(mesh.polygons[0].vertices) == 3, "Must be a triangle mesh"
+        mesh = move_around_object.evaluated_get(vl.depsgraph).to_mesh()
+        if not is_triangle_mesh(mesh):
+            self.report({'ERROR_INVALID_INPUT'}, "Selected object be a triangle mesh")
+            self.quit(context)
+            return {'CANCELLED'}
 
         mat = move_around_object.matrix_world
-        start_cam,end_cam = create_cams(move_around_object, mat, min_scale, max_scale)
+        start_cam, end_cam = create_cams(move_around_object, mat, min_scale, max_scale)
 
         n_frames = props.n_frames
         knots = [0, n_frames - 1]
@@ -307,7 +324,8 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
             try:
                 self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
                                                    metric, props.method, n_frames,
-                                                   rho=props.rho, generate_earth_file=generate_earth_file, collection_name=random_coll_name)
+                                                   rho=props.rho, generate_earth_file=generate_earth_file,
+                                                   collection_name=random_coll_name)
             except Exception as e:
                 print(e)
                 traceback.print_exc()
@@ -316,7 +334,7 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
                 return {'CANCELLED'}
 
             # update paths
-            cam_path_obj = paths[i] # bpy.data.objects[self.cam_path]
+            cam_path_obj = paths[i]  # bpy.data.objects[self.cam_path]
             update_path(cam_path_obj, self._path)
 
             # animate cam
@@ -331,7 +349,7 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
             """
 
             # generate video + export video
-            if not generate_earth_file:
+            if render_animation:
                 render_scene(cams[i], f"{exporting_path}\\{metric}.mp4", end_frame=n_frames)
 
         self.quit(context)

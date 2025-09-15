@@ -74,9 +74,14 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
         description="Make the frustum geometry of the camera available when confirming the path?",
         default=False)
 
+    render_animation : bpy.props.BoolProperty(
+        name="Render animation",
+        description="Should the camera be rendered?",
+        default=True
+    )
     generate_earth_file : bpy.props.BoolProperty(
         name="Generate Earth File",
-        description="Do you wanna compare the different metrics on a sphere shape?",
+        description="Is the object of interest spherical in shape?",
         default=False)
 
     export_dir : bpy.props.StringProperty(
@@ -104,6 +109,12 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
         description="How many frames should the generated clip have?",
         default=100,
         min=2)
+
+    selected_object: bpy.props.PointerProperty(
+        name="Selected Object",
+        description="Which object should the camera pan around?",
+        type=bpy.types.Object
+    )
 
 # ------------------------------------------------------------------------------
 
