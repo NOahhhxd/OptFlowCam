@@ -263,20 +263,36 @@ def map_to_plane(position, earth_center):
     u = 0.5 + (np.arctan2(d[1], d[0])) / (2 * math.pi)
     v = 0.5 + np.arcsin(d[2]) / math.pi
     """
+    """
     lat = math.atan2(z, math.hypot(x, y))  # [-pi/2, pi/2]
     long = math.atan2(y, x)
+    """
+    long, lat = math.acos(z), otherATan2(x,y)
     return long, lat
 
 
-def map_uv_to_longlat(v, u):
-    longitude = (u * 360) - 180
-    latitude = (v * 180) - 90
-    return longitude, latitude
+def map_uv_to_longlat(u, v):
+    # longitude = (u * 360) - 180
+    # latitude = (v * 180) - 90
+    return 90-math.degrees(u), math.degrees(v)
 
 def extract_2d_position(position, earth_center, earth_radius):
     return *map_uv_to_longlat(*map_to_plane(position, earth_center)), get_height(position, earth_center, earth_radius)
 
+def otherATan2(x,y):
+    if x > 0:
+        return math.atan(y/x)
+    if x == 0:
+        math.pi/2*(-1*y<0)
+    if x < 0 and y >= 0:
+        return math.atan(y/x) + math.pi
+    if x < 0 and y < 0:
+        return math.atan(y/x) - math.pi
+    return 0
+
+
 def extract_rotation(pos, forward, up, earth):
+    """
     # 1. get world_matrix out of forward and up
     matrix = make_lookAt_matrix(pos, forward, up)
     # 2. multiplay earth-point with this matrix
@@ -298,6 +314,24 @@ def extract_rotation(pos, forward, up, earth):
     #
     # return -rot_z, rot_y
     return rot_z,rot_x
+    """
+    matrix = make_lookAt_matrix(pos, forward, up)
+    # 2. multiplay earth-point with this matrix
+    rotated_earth_pos = matrix.inverted() @ earth
+    # pos_to_earth = (earth-pos).normalized()
+    # -z = vorne   y = oben   x = rechts
+    x, z, y = rotated_earth_pos.normalized()
+    """
+    u = 0.5 + (np.arctan2(d[1], d[0])) / (2 * math.pi)
+    v = 0.5 + np.arcsin(d[2]) / math.pi
+    """
+    """
+    lat = math.atan2(z, math.hypot(x, y))  # [-pi/2, pi/2]
+    long = math.atan2(y, x)
+    """
+    long, lat = math.pi/2-math.acos(z), otherATan2(x, y)
+    return long, lat
+
 
 def extract_data_from_cam(cam, earth_center, earth_radius):
     """
@@ -354,7 +388,7 @@ class GoogleEarthStudio:
         self.longitudes.append({"time":time, "value":get_relative_value(long, -180, 180)}) # -180 bis +180
         self.latitudes.append({"time":time, "value":get_relative_value(lat, -90, 90)}) # -90 bis +90
         self.distances.append({"time":time, "value":get_relative_value(dist, -500, 65117481)}) # -500 bis 65117481
-        self.rotationsX.append({"time":time, "value":get_relative_value(rotX, 0,2*math.pi)}) # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
-        self.rotationsY.append({"time":time, "value":get_relative_value(rotY, 0,math.pi)}) # 0° bis 180° || 0 - PI
+        self.rotationsX.append({"time":time, "value":get_relative_value(rotX, -math.pi,math.pi)}) # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
+        self.rotationsY.append({"time":time, "value":get_relative_value(rotY, 0,math.pi/2)}) # 0° bis 180° || 0 - PI
 
 

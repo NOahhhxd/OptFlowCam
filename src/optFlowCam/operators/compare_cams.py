@@ -37,23 +37,43 @@ def create_cam_2(vertex, matrix, focal, scale_base, min_scale, max_scale):
     position = look_at_position - direction * dist * focal
     return create_cam(position, direction, (0, direction[2], -direction[1]), dist, focal)
 
+def create_cam_from_face(face, matrix, focal, scale_base, min_scale, max_scale, vertices):
+    u,v = random()*0.5,random()*0.5
+    z = 1-u-v
+    vert_coords = [matrix@vertices[idx].co for idx in face.vertices]
+
+    look_at_position = z*vert_coords[0]+v*vert_coords[1]+u*vert_coords[2]
+
+    dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
+    position = vert_coords[0]+ dist * focal * face.normal
+    direction = look_at_position - position
+    direction_n = direction.normalized()
+    scale = direction.length/focal
+    return create_cam(position, direction_n, Vector([0, direction_n[2], -direction_n[1]]).normalized(), scale, focal)
+
 
 def create_cams(object_mesh, matrix, min_scale, max_scale):
     vertices = object_mesh.data.vertices
-    start_idx = randint(0, len(vertices) - 1)
-    while (end_idx := randint(0, len(vertices) - 1)) == start_idx:
+    faces = object_mesh.data.polygons
+    start_idx = randint(0, len(faces) - 1)# randint(0, len(vertices) - 1)
+    while (end_idx := randint(0, len(faces) - 1)) == start_idx:
+    # while (end_idx := randint(0, len(vertices) - 1)) == start_idx:
         pass
 
-    start_vert = vertices[start_idx]
-    end_vert = vertices[end_idx]
+    start_face = faces[start_idx] # start_vert = vertices[start_idx]
+    end_face = faces[end_idx] # end_vert = vertices[end_idx]
+
 
     # Faktor im Verhältnis der Diagonale der BB (z.B. 1-3)
     scale_base = get_shortest_bb_diagonal(object_mesh.bound_box) / 2
     focal = 1.3888888888888888
-    start_cam = create_cam_2(start_vert, matrix, focal, scale_base, min_scale, max_scale)
-    end_cam = create_cam_2(end_vert, matrix, focal, scale_base, min_scale, max_scale)
+    # start_cam = create_cam_2(start_vert, matrix, focal, scale_base, min_scale, max_scale)
+    start_cam = create_cam_from_face(start_face, matrix, focal, scale_base, min_scale, max_scale, vertices)
+    # end_cam = create_cam_2(end_vert, matrix, focal, scale_base, min_scale, max_scale)
+    end_cam = create_cam_from_face(end_face, matrix, focal, scale_base, min_scale, max_scale, vertices)
 
     return start_cam, end_cam
+
 
 
 def is_triangle_mesh(mesh):
@@ -192,7 +212,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
                 self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
                                                    metric, props.method, n_frames,
                                                    rho=props.rho, generate_earth_file=generate_earth_file,
-                                                   collection_name=random_coll_name)
+                                                   collection_name=random_coll_name, file_path=exporting_path)
             except Exception as e:
                 print(e)
                 traceback.print_exc()

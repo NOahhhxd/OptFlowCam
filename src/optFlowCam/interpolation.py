@@ -105,14 +105,14 @@ class InterpolateGoogleEarth:
 """
 
 
-def export_geoposition_data(cams, num_frames, metric, earth_center=Vector((0, 0, 0)), earth_radius=10):
+def export_geoposition_data(cams, num_frames, metric, file_path, earth_center=Vector((0, 0, 0)), earth_radius=10):
     if num_frames != len(cams):
         num_frames = len(cams)
     studio = GoogleEarthStudio(num_frames, metric, 24, earth_center, earth_radius)
     for idx, cam in enumerate(cams):
         studio.append_frame(cam, idx)
 
-    studio.createAnimation(f"C:\\Users\\nonoa\\Desktop\\renderings\\{metric}.esp")
+    studio.createAnimation(f"{file_path}\\{metric}.esp")
 
 
 def new_face(face, insert_idx):
@@ -646,7 +646,7 @@ def interpolate_simple(start: dict, end: dict,
 
     if "generate_earth_file" in kwargs and kwargs["generate_earth_file"]:
         print("Exporting data...")
-        export_geoposition_data(cams, n, metric)  # [np.array(cam["position"]) for cam in cams])
+        export_geoposition_data(cams, n, metric, kwargs["file_path"])  # [np.array(cam["position"]) for cam in cams])
         print("Exporting finished")
     return cams
 
