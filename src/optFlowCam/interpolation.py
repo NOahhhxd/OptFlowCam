@@ -131,12 +131,16 @@ class InterpolateGeodesic:
 
         context = bpy.context
         vl = context.view_layer
-        print("DEBUG:::")
+        print("-----Ausgangspunkt + Richtung----------")
         print(start_eyepoint, start_view_direction)
+        print("-----Endpunktpunkt + Richtung----------")
         print(end_eyepoint, end_view_direction)
         obj, start_face_idx, start_loc = self.raycast(start=start_eyepoint, direction=start_view_direction)
         obj2, end_face_idx, end_loc = self.raycast(start=end_eyepoint, direction=end_view_direction)
-        # print("Wirkliche Punkte: ", start_loc, end_loc)
+        print("-----Startposition auf dem Mesh----------")
+        print(start_loc)
+        print("-----Endposition auf dem Mesh----------")
+        print(end_loc)
         if obj and obj == obj2 and obj.type == "MESH":
             self.mesh = obj.evaluated_get(vl.depsgraph).to_mesh()
             self.obj = obj
@@ -154,12 +158,6 @@ class InterpolateGeodesic:
             [self.obj.matrix_world @ i.co for i in self.mesh.vertices] + [start_loc, end_loc], faces)
         # [i for i in bpy.data.meshes["Icosphere"].polygons[0].vertices] )# self.mesh.polygons)
         self.calculate(start_cam, end_cam, 0, 1, len(self.mesh.vertices), focal)
-        """
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD',
-                                             location=start_loc, scale=(.15, .15, .15))
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD',
-                                             location=end_loc, scale=(.15, .15, .15))
-        """
 
     def calculate(self, start, end, start_t, end_t, idx, focal):
         """
@@ -193,6 +191,7 @@ class InterpolateGeodesic:
         return self.distance
 
     def interpolate(self, t):
+        print(t)
         # assert self.path[0][1] <= t <= self.path[-1][1] , f"{t} is not in {self.path[0][1]} - {self.path[-1][1]}"
         idx = self.find_t_idx(t)  #
         idx = min(max(0, idx), len(self.path) - 1)
@@ -238,7 +237,7 @@ class InterpolateGeodesic:
         print("From", start_idx)
         print("to", end_idx)
         print("Distances", distance, "Summed distance: ", summed_path)
-        print("Path", path)
+        # print("Path", path)
         """
         TODO: add starting POV and ending POV to path
             look1 = pos1 + s1 * focal * view1
@@ -253,7 +252,7 @@ class InterpolateGeodesic:
             current_dist = np.linalg.norm(path[idx] - path[idx - 1])
             self.path.append((path[idx], self.path[idx - 1][1] + t_diff * current_dist / self.distance))
         self.path.append((path[-1], end_t))
-        print(self.path)
+        # print(self.path)
         # self.path = list(zip(path, np.linspace(start_t, end_t, len(path))))
 
     def find_t_idx(self, t):
@@ -275,7 +274,7 @@ class InterpolateGeodesic:
         t_before_end_part = end_t - (end_t - start_t) * end_part
         self.path = list(zip(np.vstack((look1, path, look2)),
                              [start_t] + list(np.linspace(t_after_start_part, t_before_end_part, len(path))) + [end_t]))
-        print(self.path)
+        # print(self.path)
 
     def create_path_object(self, collection_name):
         # from ..objects.path_geometry import add_path_object, update_path
@@ -283,146 +282,6 @@ class InterpolateGeodesic:
         update_path(path_object, [{"position": i[0]} for i in self.path], 'NURBS')
 
 
-"""
-class InterpolationPath:
-    def __init__(self, mesh, points, faces):
-        self.path = []
-        self.t = []
-        self.distances = []
-        self.points = points
-        self.faces = faces
-        self.mesh = mesh
-        self.geodesic_calc = geodesic.PyGeodesicAlgorithmExact(mesh.verts, mesh.faces)
-
-    def add_point(self, point, t):
-        # TODO: remove if???
-        if len(self.path) > 0:
-            # calculate distance
-            distance = self.calculate_distance(point, self.path[-1])
-            self.distances.append(distance)
-        self.path.append(point)
-        self.t.append(t)
-
-    def insert_point(self, point, t):
-        if t > self.t[-1]:
-            self.add_point(point, t)
-        else:
-            t_idx = self.find_position_of_t(t)
-            if t_idx is None:
-                return
-
-            # TODO: remove distance calculation here???
-            # insert distance
-            self.distances[t_idx] = self.calculate_distance(point, self.path[t_idx])
-            self.distances.insert(t_idx + 1, self.calculate_distance(point, self.path[t_idx + 1]))
-            # add points
-            self.t.insert(t_idx, t)
-            self.path.insert(t_idx, point)
-
-    def calculate_paths_between(self):
-        ### TODO Zwischenpunkte zwischen den gegebenen Punkten berechnen
-        point_count = len(self.points)
-        resulting_points_to_interpolate = []
-        resulting_t_values = []
-        for idx, point in enumerate(self.points):
-            if idx < point_count - 1:
-                # TODO:
-                # 1. cast ray from point to self.points[idx+1]
-                collisions = self.raycast(point, self.path[idx + 1])
-                # AUfbau von collisions = [(entry_point1, exit_point1),...,(entry_pointN, exit_pointN)]
-                # if collision with mesh
-                if collisions:
-                    total_distance = 0
-                    intermediate_points = []
-                    for collision_idx, collision_points in enumerate(collisions):
-
-                        # => save "point of entry" and "point of exit"
-                        entry_point, exit_point = collision_points
-                        # Aufbau von entry_point ist (face_idx_0, loc_0)
-                        # get idx of nearest points on mesh
-                        entry_point_idx = self.nearest_point_on_mesh(self.mesh, entry_point)
-                        exit_point_idx = self.nearest_point_on_mesh(self.mesh, exit_point)
-
-                        # => lin. interp. from point to "point of entry"
-                        # => geodesic between "point of entry" and "point of exit"
-                        distance, path = self.geodesic_calc.geodesicDistance(self.mesh, entry_point_idx, exit_point_idx)
-                        if collision_idx > 0:
-                            total_distance += np.linalg.norm(path[0] - intermediate_points[-1][0][-1])
-
-                        total_distance += distance
-                        # Assumption: path[0] = coordinates of entry_point && path[-1] = coordinates of exit_point
-                        intermediate_points.append((path, distance))
-
-                # => if more than one "point of entry" and "point of exit" => repeat until last "point of exit" is reached
-                # else
-                # => linear interpolation between points
-                else:
-                    # lin.interpol. between point and next point
-                    resulting_points_to_interpolate.append(point)
-                    resulting_t_values.append(self.t[idx])
-            else:
-                resulting_points_to_interpolate.append(point)
-                resulting_t_values.append(self.t[idx])
-
-        return resulting_points_to_interpolate, resulting_t_values
-
-    def interpolate(self, t):
-        after_t_pos = self.find_position_of_t(t)
-        if after_t_pos is None:
-            raise IndexError("Index out of range")
-
-        start_point = self.points[after_t_pos - 1]
-        end_point = self.points[after_t_pos]
-
-        start_t = self.t[after_t_pos - 1]
-        end_t = self.t[after_t_pos]
-
-        percentage = (start_t - t) / (end_t - start_t)
-
-        point = start_point + (end_point - start_point) * percentage
-
-        return point
-
-    ### TODO implement binary search (or linear search)
-    def find_position_of_t(self, t):
-        for idx, val in enumerate(self.t):
-            if val > t:
-                return idx
-        return None
-
-    ### TODO implement method with geodesic algorithm
-    def calculate_distance(self, point1, point2):
-        # self.geodesic_calc.geodesicDistance()
-        return np.linalg.norm(point1, point2)
-
-    def raycast(self, start, end) -> list:
-        context = bpy.context
-        vl = context.view_layer
-        scene = context.scene
-        direction = end - start
-        hits = []
-
-        hit, loc_0, norm_0, face_idx_0, obj_0, mw_0 = scene.ray_cast(vl, start, direction,
-                                                                     distance=np.linalg.norm(direction))
-        while hit:
-            start = loc_0  # TODO add small value e.g. (+ 0.0001 * normalized(direction))
-            hit, loc_1, norm_1, face_idx_1, obj_1, mw_1 = scene.ray_cast(vl, start,
-                                                                         distance=np.linalg.norm(end - start))
-            assert hit == True
-            hits.append(((face_idx_0, loc_0), (face_idx_0, loc_0)))
-
-        return hits
-
-    def nearest_point_on_mesh(self, mesh, entry_point) -> int:
-        mesh.faces.ensure_lookup_table()
-        f = mesh.faces[entry_point[0]]
-        nearest_vert = None
-        for v in f.verts:
-            if not nearest_vert or nearest_vert[0] < (v.co - entry_point).length:
-                nearest_vert = ((v.co - entry_point[1]).length, v)
-
-        return nearest_vert[1].index
-"""
 interpolate_geodesics: InterpolateGeodesic = None
 
 
@@ -534,9 +393,7 @@ def find_good_way_between(look1: np.ndarray, look2: np.ndarray, meshes=None) -> 
 """
 
 
-def m(t):  # , start, end):
-    # return (1-t)*end + t*start
-    # TODO: REIMPLEMENTATION with geodesic
+def m(t):
     assert interpolate_geodesics is not None
     return interpolate_geodesics.interpolate(t)
 
@@ -603,7 +460,7 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         cam = cam_from_params(u, w, R_f(t), focal, look1, look_diff)
         return cam
 
-    elif metric == "3DImageFlow2":
+    elif metric == "3DImageFlowGeodesic":
         rho = kwargs["rho"]
 
         w0 = s1
@@ -673,7 +530,7 @@ def get_camera_distance(start: dict, end: dict,
         _, _, S = get_zoom_pan_parameter_functions(w0, w1, u0, u1, rho)
 
         dist = np.sqrt((S * S) / 2 + (beta_end * beta_end) / 6)
-    elif metric == "3DImageFlow2":
+    elif metric == "3DImageFlowGeodesic":
         rho = kwargs["rho"]
         w0 = s1;
         w1 = s2
@@ -683,7 +540,7 @@ def get_camera_distance(start: dict, end: dict,
         _, _, S = get_zoom_pan_parameter_functions(w0, w1, u0, u1, rho)
         # TODO: Die geodätische Länge mit einbeziehen
         dist = np.sqrt((S * S) / 2 + (beta_end * beta_end) / 6)
-    # elif metric == "3DImageFlow2":
+    # elif metric == "3DImageFlowGeodesic":
     #    lookat_point = m(t, start=pos1, end=pos2)
     #    look_diff = lookat_point - look1
     #    rho = kwargs["rho"]
@@ -707,7 +564,6 @@ def cam_from_params2(u: float, w: float,
     scale = w
 
     lookat = m(u)
-    # lookat = lookat_pos + u * lookat_dir
     pos = lookat - scale * focal * view
 
     cam = {
@@ -740,6 +596,25 @@ def cam_from_params(u: float, w: float,
     return cam
 
 
+def clone_cam(cam):
+    return {
+        "position": cam["position"].copy(),
+        "view": cam["view"].copy(),
+        "up": cam["up"].copy(),
+        "frustum_scale": cam["frustum_scale"],
+        "focal": cam["focal"]
+    }
+
+
+def resize(cam, t):
+    # pos = lookat - scale * focal * view
+    # => scale = (pos - lookat)/(focal*view)
+    coords = Vector(interpolate_geodesics.interpolate(t))
+    pos = Vector(cam["position"])
+    cam["frustum_scale"] = (coords-pos).length / cam["focal"]
+    return cam
+
+
 def interpolate_simple(start: dict, end: dict,
                        focal: float, metric: str,
                        n: int = 101, **kwargs) -> list:
@@ -749,15 +624,24 @@ def interpolate_simple(start: dict, end: dict,
 
     kwargs should contain the parameter rho if metric==3DImageFlow.
     '''
-    if metric == "3DImageFlow2":
+    if metric == "3DImageFlowGeodesic":
         global interpolate_geodesics
         interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal)
         if "collection_name" in kwargs and kwargs["collection_name"]:
             interpolate_geodesics.create_path_object(kwargs["collection_name"])
-    cams = [interpolate_t(t, focal, metric,
-                          start=start, end=end,
-                          **kwargs)
-            for t in np.linspace(0, 1, n)]
+        start_cam = clone_cam(start)
+        resize(start_cam, 0)
+        end_cam = clone_cam(end)
+        resize(end_cam, 1)
+        cams = [interpolate_t(t, focal, metric,
+                              start=start_cam, end=end_cam,
+                              **kwargs)
+                for t in np.linspace(0, 1, n)]
+    else:
+        cams = [interpolate_t(t, focal, metric,
+                              start=start, end=end,
+                              **kwargs)
+                for t in np.linspace(0, 1, n)]
 
 
     if "generate_earth_file" in kwargs and kwargs["generate_earth_file"]:
@@ -924,7 +808,7 @@ def disambiguate_spline(control_points: list, knots: list, spline: list):
 def interpolate_keyframes(control_points: list, knots: list,
                           focal: float, metric: str, method: str,
                           n: int = 101, **kwargs) -> list:
-    if (metric == "3DImageFlow" or metric == "3DImageFlow2") and not "rho" in kwargs:
+    if (metric == "3DImageFlow" or metric == "3DImageFlowGeodesic") and not "rho" in kwargs:
         kwargs["rho"] = np.sqrt(2)
         print("No named argument rho given for metric 3DImageFlow. Using default parameter sqrt(2).")
 

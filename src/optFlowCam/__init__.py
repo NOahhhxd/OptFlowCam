@@ -13,7 +13,7 @@ bl_info = {
 }
 
 modules = ['utility', 'math', 'interpolation', 'ui', 'properties', 
-           'objects', 'operators'] #, 'pygeodesic']
+           'objects', 'operators']
 import sys, os
 print("version:",sys.version)
 from . import register_modules
@@ -21,6 +21,11 @@ def register():
     lib_path = os.path.join(os.path.dirname(__file__), "pygeodesic_lib")
     if lib_path not in sys.path:
         sys.path.insert(0, lib_path)
+    """
+    lib_path = os.path.join(os.path.dirname(__file__), "moviepy")
+    if lib_path not in sys.path:
+        sys.path.insert(0, lib_path)
+    """
     full_names = register_modules.get_full_module_names(modules, __name__)
     register_modules.register(full_names)
 

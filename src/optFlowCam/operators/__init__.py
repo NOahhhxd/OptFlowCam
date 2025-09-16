@@ -1,5 +1,5 @@
 modules = ['insert_keyframe', 'interpolate_camera', 'redistribute_frames', 
-                'reset_property']
+                'reset_property', 'compare_cams']
 
 from .. import register_modules
 

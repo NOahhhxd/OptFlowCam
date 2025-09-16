@@ -54,6 +54,7 @@ class OFC_PT_OptimalPathOperatorPanel(bpy.types.Panel):
             layout.operator('ofc.realize_keyframe', text='Insert Current Frame')
 
         layout.operator('ofc.interpolate_camera', text='Interpolate Camera')
+        layout.operator('ofc.compare_interpolate_camera', text='Compare Methods')
 
 # ------------------------------------------------------------------------------
 
@@ -79,7 +80,6 @@ class OFC_PT_OptimalPathAdvancedOptionsPanel(bpy.types.Panel):
 
         layout.prop(init_props, "make_path_permanent")
         layout.prop(init_props, "make_frustum_permanent")
-        layout.prop(init_props, "generate_earth_file")
 
 
 class OFC_PT_OptimalPathCompareOptionsPanel(bpy.types.Panel):

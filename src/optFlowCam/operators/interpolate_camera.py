@@ -1,78 +1,14 @@
 import bpy
-from mathutils import Vector
+
 import traceback
 
 from ..objects.camera import add_camera_object, update_camera, animate_camera
 from ..objects.path_geometry import add_path_object, update_path
 from ..objects.frustum_geometry import add_frustum_object, animate_frustum
-from ..objects.render import render_scene
+
 
 from ..utility import cam_to_sample, lookat_path_from_camera_path
 from ..interpolation import interpolate_keyframes
-from random import randint, random
-
-
-def create_cam(position, view, up, scale, focal):
-    return {
-        "position": [i for i in position],
-        "view": [i for i in view],
-        "up": [i for i in up],
-        "frustum_scale": scale,
-        "focal": focal
-    }
-
-
-def get_shortest_bb_diagonal(bounding_box):
-    min_length = None
-    for i in range(2, len(bounding_box)):
-        length = (Vector(bounding_box[i]) - Vector(bounding_box[(i + 2) % len(bounding_box)])).length
-        if not min_length or length < min_length:
-            min_length = length
-    return min_length
-
-
-def create_cam_2(vertex, matrix, focal, scale_base, min_scale, max_scale):
-    dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
-    direction = -vertex.normal
-    look_at_position = matrix @ vertex.co
-    position = look_at_position - direction * dist * focal
-    return create_cam(position, direction, (-direction[1], direction[0], 0), focal, scale_base)
-
-
-def create_cams(object_mesh, matrix, min_scale, max_scale):
-    vertices = object_mesh.data.vertices
-    start_idx = randint(0, len(vertices) - 1)
-    while (end_idx := randint(0, len(vertices) - 1)) == start_idx:
-        pass
-
-    start_vert = vertices[start_idx]
-    end_vert = vertices[end_idx]
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD', location=matrix @ start_vert.co,
-                                         scale=(.1, .1, .1))
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, align='WORLD', location=matrix @ end_vert.co,
-                                         scale=(.1, .1, .1))
-
-    # Faktor im Verhältnis der Diagonale der BB (z.B. 1-3)
-    scale_base = get_shortest_bb_diagonal(object_mesh.bound_box) / 2
-    focal = 1.3888888888888888
-    start_cam = create_cam_2(start_vert, matrix, focal, scale_base, min_scale, max_scale)
-    end_cam = create_cam_2(end_vert, matrix, focal, scale_base, min_scale, max_scale)
-
-    return start_cam, end_cam
-
-
-def is_triangle_mesh(mesh):
-    if len(mesh.polygons) == 0:
-        return False
-    min_face_count, max_face_count = 4, 2
-    for face in mesh.polygons:
-        n_vertices = len(face.vertices)
-        if n_vertices < min_face_count:
-            min_face_count = n_vertices
-        if n_vertices > max_face_count:
-            max_face_count = n_vertices
-    return max_face_count == 3 and min_face_count == max_face_count
-
 
 class OFC_OT_InterpolateCamera(bpy.types.Operator):
     # custom ID
@@ -148,9 +84,6 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
 
     # the "update" method of the operator
     def modal(self, context, event):
-        return self.generate_random_cam(context, event)
-
-    """
         if event.type in {'ESC'}:
             self.quit(context)
             return {'CANCELLED'}
@@ -229,7 +162,6 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
 
             new_cam = add_camera_object(coll.name, camera_name="OptFlowCam")
             animate_camera(self._path, new_cam, start_frame=frame_start)
-            render_scene(new_cam, f"C:\\Users\\nonoa\\Desktop\\renderings\\{new_cam.name}.mp4", start_frame=frame_start, end_frame=frame_end)
             if props.make_frustum_permanent:
                 new_frustum = add_frustum_object(coll.name, object_name="OptFlowFrustum")
                 animate_frustum(self._path, new_frustum, start_frame=frame_start)
@@ -249,7 +181,6 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
 
         # modal will be run the next time an UI event is triggered
         return {'RUNNING_MODAL'}
-        """
 
     def quit(self, context):
         coll = bpy.data.collections[self.temp_collection]
@@ -262,157 +193,12 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
 
         context.scene.OFC.op_props.operator_running = False
         context.scene.OFC.op_props.property_unset("temp_cam")
-
-    def generate_random_cam(self, context, event):
-        metrics = ["3DImageFlow", "TransformationsLinear", "3DImageFlow2"]
-        # Preparation
-        coll = bpy.data.collections.new(f"random_cams")
-        bpy.context.scene.collection.children.link(coll)
-        random_coll_name = coll.name
-
-        # create cams with paths
-        cams = []
-        paths = []
-        for metric in metrics:
-            cam = add_camera_object(random_coll_name, camera_name=f"random_cam_{metric}")
-            # random_cam_name = cam.name
-            cams.append(cam)
-            random_cam_path = f"random_path_{metric}"
-            path = add_path_object(2, random_coll_name, random_cam_path)
-            paths.append(path)
-
-        # op_props = context.scene.OFC.op_props
-        props = context.scene.OFC.init_props
-
-        # read properties
-        move_around_object = props.selected_object  # bpy.context.selected_objects[0]
-        render_animation = props.render_animation
-        generate_earth_file = props.generate_earth_file
-        exporting_path = props.export_dir
-        min_scale = props.min_scale
-        max_scale = props.max_scale
-        if min_scale > max_scale:
-            self.report({'ERROR_INVALID_INPUT'}, "min_scale must be smaller than max_scale")
-            self.quit(context)
-            return {'CANCELLED'}
-
-        context = bpy.context
-        vl = context.view_layer
-
-        # add cams to scene
-        if move_around_object.type != 'MESH':
-            self.report({'ERROR_INVALID_INPUT'}, "Selected object must be a triangle mesh")
-            self.quit(context)
-            return {'CANCELLED'}
-
-        mesh = move_around_object.evaluated_get(vl.depsgraph).to_mesh()
-        if not is_triangle_mesh(mesh):
-            self.report({'ERROR_INVALID_INPUT'}, "Selected object be a triangle mesh")
-            self.quit(context)
-            return {'CANCELLED'}
-
-        mat = move_around_object.matrix_world
-        start_cam, end_cam = create_cams(move_around_object, mat, min_scale, max_scale)
-
-        n_frames = props.n_frames
-        knots = [0, n_frames - 1]
-        cam_samples = [start_cam, end_cam]
-
-        for i, metric in enumerate(metrics):
-            print(metric)
-            # interpolate between cams
-            try:
-                self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
-                                                   metric, props.method, n_frames,
-                                                   rho=props.rho, generate_earth_file=generate_earth_file,
-                                                   collection_name=random_coll_name)
-            except Exception as e:
-                print(e)
-                traceback.print_exc()
-                self.report({'ERROR_INVALID_INPUT'}, "Could not compute path")
-                self.quit(context)
-                return {'CANCELLED'}
-
-            # update paths
-            cam_path_obj = paths[i]  # bpy.data.objects[self.cam_path]
-            update_path(cam_path_obj, self._path)
-
-            # animate cam
-            animate_camera(self._path, cams[i])
-            """
-            # get animated cam
-            coll = bpy.data.collections.new("OptimizedCamera")
-            bpy.context.scene.collection.children.link(coll)
-
-            new_cam = add_camera_object(coll.name, camera_name="OptFlowCam_"+metric)
-            animate_camera(self._path, new_cam, start_frame=frame_start)
-            """
-
-            # generate video + export video
-            if render_animation:
-                render_scene(cams[i], f"{exporting_path}\\{metric}.mp4", end_frame=n_frames)
-
-        self.quit(context)
-        return {'FINISHED'}
-
-    """
-        cams = calculate_cams(methods, interpolation_methods)
-        for Cam in cams:
-            scene.render(Cam)
-
-        def calculate_cams(methods, interpolation_methods):
-            for i, elem in enumerate(Interpolation_methods):
-                positions = calculate_cam_position(methods[i])
-                if google_earth:
-                    save_as_eartfile(positions)
-        """
-
-    """
-    def make_auto_animation():
-    # input = mesh
-    mesh = bpy.data.meshes[0]
-    vert_count = len(mesh.vertices)
-    start_vert = mesh.vertices[randint(0, vert_count)]
-    while (end_vert := mesh.vertices[randint(0, vert_count)]) != start_vert:
-        pass
-
-    start_cam_pos = start_vert.co + randint(2, 5) * start_vert.normal
-    end_cam_pos = end_vert.co + randint(2, 5) * end_vert.normal
-
-    cam1 = {
-        "position": start_cam_pos.tolist(),
-        "view": -start_vert.normal,
-        "up": (0, 0, 1),  # ??? up.tolist(),
-        "frustum_scale": 1,
-        "focal": 1  # ????
-    }
-    cam2 = {
-        "position": end_cam_pos.tolist(),
-        "view": -end_vert.normal,
-        "up": (0, 0, 1),  # ??? up.tolist(),
-        "frustum_scale": 1,  # ???
-        "focal": 1  # ????
-    }
-
-    # add cams to scene
-    # interpolate between cams
-    # get keyframe_cam
-    # generate video
-    # export video
-    # repeat for different methods
-    """
-
-
 # ------------------------------------------------------------------------------
 
 classes = [OFC_OT_InterpolateCamera]
-
-
 def register():
     for cl in classes:
         bpy.utils.register_class(cl)
-
-
 def unregister():
     for cl in classes:
         bpy.utils.unregister_class(cl)
