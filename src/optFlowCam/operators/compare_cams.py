@@ -2,10 +2,9 @@ import bpy
 from mathutils import Vector
 import traceback
 
-from ..objects.camera import add_camera_object, animate_camera
+from ..objects.camera import add_camera_object, animate_camera, update_camera
 from ..objects.path_geometry import add_path_object, update_path
-from ..objects.render import render_scene#, combineClips
-
+from ..objects.render import render_scene, render_single_image  # , combineClips
 
 from ..interpolation import interpolate_keyframes
 from random import randint, random
@@ -21,10 +20,10 @@ def create_cam(position, view, up, scale, focal):
     }
 
 
-def get_shortest_bb_diagonal(bounding_box):
+def get_shortest_bb_diagonal(bounding_box, matrix):
     min_length = None
     for i in range(2, len(bounding_box)):
-        length = (Vector(bounding_box[i]) - Vector(bounding_box[(i + 2) % len(bounding_box)])).length
+        length = (matrix @ Vector(bounding_box[i]) - matrix @ Vector(bounding_box[(i + 2) % len(bounding_box)])).length
         if not min_length or length < min_length:
             min_length = length
     return min_length
@@ -35,37 +34,71 @@ def create_cam_2(vertex, matrix, focal, scale_base, min_scale, max_scale):
     direction = -vertex.normal
     look_at_position = matrix @ vertex.co
     position = look_at_position - direction * dist * focal
-    return create_cam(position, direction, (0, direction[2], -direction[1]), dist, focal)
+    if direction[1] < 0:
+        return create_cam(position, direction, (0, direction[2], -direction[1]), dist, focal)
+    else:
+        return create_cam(position, direction, (0, -direction[2], direction[1]), dist, focal)
+
 
 def create_cam_from_face(face, matrix, focal, scale_base, min_scale, max_scale, vertices):
-    u,v = random()*0.5,random()*0.5
-    z = 1-u-v
-    vert_coords = [matrix@vertices[idx].co for idx in face.vertices]
+    u, v = random() * 0.5, random() * 0.5
+    z = 1 - u - v
+    vert_coords = [matrix @ vertices[idx].co for idx in face.vertices]
 
-    look_at_position = z*vert_coords[0]+v*vert_coords[1]+u*vert_coords[2]
+    look_at_position = z * vert_coords[0] + v * vert_coords[1] + u * vert_coords[2]
 
     dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
-    position = vert_coords[0]+ dist * focal * face.normal
+    position = vert_coords[0] + dist * focal * face.normal
     direction = look_at_position - position
     direction_n = direction.normalized()
-    scale = direction.length/focal
-    return create_cam(position, direction_n, Vector([0, direction_n[2], -direction_n[1]]).normalized(), scale, focal)
+    scale = direction.length / focal
+    if direction[1] < 0:
+        return create_cam(position, direction_n, Vector([0, direction_n[2], -direction_n[1]]).normalized(), scale,
+                          focal)
+    else:
+        return create_cam(position, direction_n, Vector([0, -direction_n[2], direction_n[1]]).normalized(), scale,
+                          focal)
+
+
+def add_material(objects, color, transparent=False):
+    mat = bpy.data.materials.new(name="TransparentMaterial")
+    if transparent:
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+
+        for n in nodes:
+            nodes.remove(n)
+
+        bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.location = (0, 0)
+        bsdf.inputs["Base Color"].default_value = color
+        bsdf.inputs["Alpha"].default_value = color[3]
+        output = nodes.new("ShaderNodeOutputMaterial")
+        output.location = (200, 0)
+
+        links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+    else:
+        mat.diffuse_color = color
+
+    for obj in objects:
+        obj.data.materials.append(mat)
+    return mat
 
 
 def create_cams(object_mesh, matrix, min_scale, max_scale):
     vertices = object_mesh.data.vertices
     faces = object_mesh.data.polygons
-    start_idx = randint(0, len(faces) - 1)# randint(0, len(vertices) - 1)
+    start_idx = randint(0, len(faces) - 1)  # randint(0, len(vertices) - 1)
     while (end_idx := randint(0, len(faces) - 1)) == start_idx:
-    # while (end_idx := randint(0, len(vertices) - 1)) == start_idx:
+        # while (end_idx := randint(0, len(vertices) - 1)) == start_idx:
         pass
 
-    start_face = faces[start_idx] # start_vert = vertices[start_idx]
-    end_face = faces[end_idx] # end_vert = vertices[end_idx]
-
+    start_face = faces[start_idx]  # start_vert = vertices[start_idx]
+    end_face = faces[end_idx]  # end_vert = vertices[end_idx]
 
     # Faktor im Verhältnis der Diagonale der BB (z.B. 1-3)
-    scale_base = get_shortest_bb_diagonal(object_mesh.bound_box) / 2
+    scale_base = get_shortest_bb_diagonal(object_mesh.bound_box, object_mesh.matrix_world) / 2
     focal = 1.3888888888888888
     # start_cam = create_cam_2(start_vert, matrix, focal, scale_base, min_scale, max_scale)
     start_cam = create_cam_from_face(start_face, matrix, focal, scale_base, min_scale, max_scale, vertices)
@@ -73,7 +106,6 @@ def create_cams(object_mesh, matrix, min_scale, max_scale):
     end_cam = create_cam_from_face(end_face, matrix, focal, scale_base, min_scale, max_scale, vertices)
 
     return start_cam, end_cam
-
 
 
 def is_triangle_mesh(mesh):
@@ -87,6 +119,72 @@ def is_triangle_mesh(mesh):
         if n_vertices > max_face_count:
             max_face_count = n_vertices
     return max_face_count == 3 and min_face_count == max_face_count
+
+
+def get_look_at_points(cams):
+    # pos = lookat - scale * focal * view => looakt = pos + scale*focal*view
+    context = bpy.context
+    vl = context.view_layer
+    scene = context.scene
+    # hit, loc, norm_0, face_idx, obj_0, mw_0 = scene.ray_cast(vl.depsgraph, start, direction)
+    return [scene.ray_cast(vl.depsgraph, Vector(cam["position"]), Vector(cam["view"]))[1] for cam in cams]
+    return [Vector(cam["position"]) + cam["frustum_scale"] * cam["focal"] * Vector(cam["view"]) for cam in cams]
+
+
+def create_spheres_at(positions, collection_name):
+    spheres = []
+    for position in positions:
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=.2, enter_editmode=False, align='WORLD', location=position,
+                                             scale=(1, 1, 1))
+        sphere_obj = bpy.context.active_object
+        spheres.append(sphere_obj)
+        if collection_name == bpy.context.scene.collection.name:
+            bpy.context.scene.collection.objects.link(sphere_obj)
+        else:
+            bpy.data.collections[collection_name].objects.link(sphere_obj)
+    return spheres
+
+
+def middleOfBB(obj):
+    bb = [obj.matrix_world @ Vector(i) for i in obj.bound_box]
+    middle = Vector([0, 0, 0])
+    for elem in bb:
+        middle += elem
+    return middle / len(bb)
+
+
+def create_outside_cam(start_pos, end_pos, obj, collection_name):
+    middle = start_pos + (end_pos - start_pos) / 2
+    obj_mid = middleOfBB(obj)
+    obj_mid_to_middle = middle - obj_mid
+    middle_normal = Vector([obj_mid_to_middle[0], obj_mid_to_middle[1], 0]).normalized()
+    """
+    middle_normal = (end_pos - start_pos).normalized()
+    middle_normal = Vector([middle_normal[1], -middle_normal[0], 0]).normalized()
+
+    # if normal goes into object if dist to mid point > 0 (then inverse direction)
+    
+    if (obj_mid - middle) @ middle_normal > 0:
+        middle_normal *= -1
+    """
+    dist = get_shortest_bb_diagonal(obj.bound_box, obj.matrix_world)
+    cam_position = middle + 2.5 * dist * middle_normal
+    # Ausrichtung auf Mitte des Objekts
+    cam_position[2] = obj_mid[2]
+    cam_direction = (obj_mid - cam_position).normalized()
+    # cam_direction = (middle - cam_position).normalized()
+    """
+    if cam_direction[1] < 0:
+        up_vec = Vector([0,cam_direction[2], -cam_direction[1]]).normalized()
+    else:
+        up_vec = Vector([0, -cam_direction[2], cam_direction[1]]).normalized()
+    """
+    # solange es auf den Mittelpunkt des direktden Pfads gerichtet ist, kann up-Vector einfach nach oben gerictet sein
+    up_vec = Vector([0, 0, 1])
+    cam = create_cam(cam_position, cam_direction, up_vec, 1, 1.3888888888888888)
+    cam_obj = add_camera_object(collection_name, "singleShot")
+    update_camera(cam, cam_obj)
+    return cam_obj
 
 
 class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
@@ -147,8 +245,6 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
     def modal(self, context, event):
         return self.generate_random_cam(context, event)
 
-
-
     def generate_random_cam(self, context, event):
         wm = context.window_manager
         wm.progress_begin(0, 100)
@@ -160,6 +256,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
 
         # create cams with paths
         cams = []
+        geodesic_path = add_path_object(2, random_coll_name, "geodesic_path")
         paths = []
         for metric in metrics:
             cam = add_camera_object(random_coll_name, camera_name=f"random_cam_{metric}")
@@ -212,7 +309,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
                 self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
                                                    metric, props.method, n_frames,
                                                    rho=props.rho, generate_earth_file=generate_earth_file,
-                                                   collection_name=random_coll_name, file_path=exporting_path)
+                                                   geodesic_path_object=geodesic_path, file_path=exporting_path)
             except Exception as e:
                 print(e)
                 traceback.print_exc()
@@ -227,8 +324,36 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
 
             if render_animation:
                 filenames.append(f"{exporting_path}\\{metric}.mp4")
-                render_scene(cams[i], filenames[-1] , end_frame=n_frames)
-            wm.progress_update(3+90/len(metrics)*(i+1))
+                render_scene(cams[i], filenames[-1], end_frame=n_frames)
+            wm.progress_update(3 + 90 / len(metrics) * (i + 1))
+
+        if render_animation:
+            start_pos, end_pos = get_look_at_points([start_cam, end_cam])
+            start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name)
+            # copy state before
+            mat_copy = move_around_object.data.materials[:]
+            # make object a little transparent
+            added_materials = [add_material([move_around_object], (1, 1, 1, 0.6), True),
+                               # mark path
+                               add_material([geodesic_path], (1, 0.46, 0, 1), False),
+                               # mark start and end point (colored)
+                               add_material([start_sphere, end_sphere], (1, 0, 0, 1), False)]
+            geodesic_path.data.bevel_depth = 0.05
+            # create and positioning cam
+            cam = create_outside_cam(start_pos, end_pos, move_around_object, random_coll_name)
+            # make photo
+            render_single_image(cam, f"{exporting_path}\\overview.png")
+            # undo everything
+            move_around_object.data.materials.clear()
+            for mat in mat_copy:
+                move_around_object.data.materials.append(mat)
+            geodesic_path.data.bevel_depth = 0
+            for mat in added_materials:
+                bpy.data.materials.remove(mat)
+
+            bpy.data.objects.remove(start_sphere)
+            bpy.data.objects.remove(cam)
+            bpy.data.objects.remove(end_sphere)
 
         """
         if len(filenames)>1:

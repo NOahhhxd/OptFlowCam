@@ -3,6 +3,7 @@ import bpy
 def render_scene(cam, file_path, start_frame=0, end_frame=100):
     scene = bpy.context.scene
     scene.camera = cam
+    scene.render.engine = 'BLENDER_EEVEE_NEXT'
     scene.render.filepath = file_path
     scene.render.resolution_x = 1920
     scene.render.resolution_y = 1080
@@ -13,6 +14,15 @@ def render_scene(cam, file_path, start_frame=0, end_frame=100):
 
     bpy.ops.render.render(animation=True)
 
+def render_single_image(cam, file_path):
+    scene = bpy.context.scene
+    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    scene.camera = cam
+    scene.render.filepath = file_path
+    scene.render.resolution_x = 1920
+    scene.render.resolution_y = 1080
+    scene.render.image_settings.file_format = 'PNG'
+    bpy.ops.render.render(animation=False, write_still=True)
 """
 import moviepy as mp
 from random import shuffle

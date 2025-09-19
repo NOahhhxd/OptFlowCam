@@ -276,9 +276,9 @@ class InterpolateGeodesic:
                              [start_t] + list(np.linspace(t_after_start_part, t_before_end_part, len(path))) + [end_t]))
         # print(self.path)
 
-    def create_path_object(self, collection_name):
+    def update_path_object(self, path_object):
         # from ..objects.path_geometry import add_path_object, update_path
-        path_object = add_path_object(2, collection_name, "geodesic_path")
+        # path_object = add_path_object(2, collection_name, "geodesic_path")
         update_path(path_object, [{"position": i[0]} for i in self.path], 'NURBS')
 
 
@@ -627,8 +627,8 @@ def interpolate_simple(start: dict, end: dict,
     if metric == "3DImageFlowGeodesic":
         global interpolate_geodesics
         interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal)
-        if "collection_name" in kwargs and kwargs["collection_name"]:
-            interpolate_geodesics.create_path_object(kwargs["collection_name"])
+        if "geodesic_path_object" in kwargs and kwargs["geodesic_path_object"]:
+            interpolate_geodesics.update_path_object(kwargs["geodesic_path_object"])
         start_cam = clone_cam(start)
         resize(start_cam, 0)
         end_cam = clone_cam(end)
