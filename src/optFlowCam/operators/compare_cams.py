@@ -7,10 +7,11 @@ from ..objects.path_geometry import add_path_object, update_path
 from ..objects.render import render_scene, render_single_image  # , combineClips
 
 from ..interpolation import interpolate_keyframes
-from random import randint, random
+from random import randint, random, shuffle
 import bmesh
+from math import pi
 
-def create_convex_hull_object(obj, collection):
+def create_convex_hull_object(obj, collection_name):
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     ch = bmesh.ops.convex_hull(bm, input=bm.verts)
@@ -28,7 +29,6 @@ def create_convex_hull_object(obj, collection):
             faces.append(elem)
         elif typestring.find("BMEdge") > -1:
             edges.append(elem)
-
     idx_map = {elem.index: i for i, elem in enumerate(vertices)}
     coords = [obj.matrix_world@vert.co for vert in vertices]
     faces_mesh = [[idx_map[i.index] for i in face.verts] for face in faces]
@@ -40,7 +40,7 @@ def create_convex_hull_object(obj, collection):
     # make object from mesh
     new_object = bpy.data.objects.new('convex_hull', new_mesh)
     # add object to scene collection
-    collection.objects.link(new_object)
+    bpy.data.collections[collection_name].objects.link(new_object)
     return new_object
 
 
@@ -74,12 +74,14 @@ def create_cam_2(vertex, matrix, focal, scale_base, min_scale, max_scale):
         return create_cam(position, direction, (0, -direction[2], direction[1]), dist, focal)
 
 
-def create_cam_from_face(face, matrix, focal, scale_base, min_scale, max_scale, vertices):
+def create_cam_from_face(face, matrix, focal, scale_base, min_scale, max_scale, vertices, other_face):
     u, v = random() * 0.5, random() * 0.5
     z = 1 - u - v
+
+    other_coords = [matrix @ vertices[idx].co for idx in other_face.vertices]
     vert_coords = [matrix @ vertices[idx].co for idx in face.vertices]
 
-    look_at_position = z * vert_coords[0] + v * vert_coords[1] + u * vert_coords[2]
+    look_at_position = z * other_coords[0] + v * other_coords[1] + u * other_coords[2]
 
     dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
     position = vert_coords[0] + dist * focal * face.normal
@@ -123,21 +125,33 @@ def add_material(objects, color, transparent=False):
 def create_cams(object_mesh, matrix, min_scale, max_scale):
     vertices = object_mesh.data.vertices
     faces = object_mesh.data.polygons
+    face_idx = list(range(len(faces)))
+    shuffle(face_idx)
+    shuffle(face_idx)
+    #start_idx = vertices_idx[0]
+    """
     start_idx = randint(0, len(faces) - 1)  # randint(0, len(vertices) - 1)
+
     while (end_idx := randint(0, len(faces) - 1)) == start_idx:
         # while (end_idx := randint(0, len(vertices) - 1)) == start_idx:
         pass
 
+    # end_idx = vertices_idx[-1]
     start_face = faces[start_idx]  # start_vert = vertices[start_idx]
     end_face = faces[end_idx]  # end_vert = vertices[end_idx]
-
-    # Faktor im Verhältnis der Diagonale der BB (z.B. 1-3)
+    """
     scale_base = get_shortest_bb_diagonal(object_mesh.bound_box, object_mesh.matrix_world) / 2
     focal = 1.3888888888888888
-    # start_cam = create_cam_2(start_vert, matrix, focal, scale_base, min_scale, max_scale)
-    start_cam = create_cam_from_face(start_face, matrix, focal, scale_base, min_scale, max_scale, vertices)
-    # end_cam = create_cam_2(end_vert, matrix, focal, scale_base, min_scale, max_scale)
-    end_cam = create_cam_from_face(end_face, matrix, focal, scale_base, min_scale, max_scale, vertices)
+    start_face = faces[face_idx[0]]
+    i = 1
+    while start_face.normal.angle(faces[face_idx[i]].normal)>pi/4:
+        i+=1
+    start_cam = create_cam_from_face(start_face, matrix, focal, scale_base, min_scale, max_scale, vertices, faces[face_idx[i]])
+    end_face = faces[face_idx[-1]]
+    i = -2
+    while end_face.normal.angle(faces[face_idx[i]].normal) > pi / 4:
+        i -= 1
+    end_cam = create_cam_from_face(end_face, matrix, focal, scale_base, min_scale, max_scale, vertices, faces[face_idx[i]])
 
     return start_cam, end_cam
 
@@ -326,9 +340,11 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         if not is_triangle_mesh(mesh):
             self.report({'ERROR_INVALID_INPUT'}, "Selected object be a triangle mesh")
             return {'CANCELLED'}
-
-        mat = move_around_object.matrix_world
-        start_cam, end_cam = create_cams(move_around_object, mat, min_scale, max_scale)
+        move_around_object.hide_set(True)
+        convex_hull_obj = create_convex_hull_object(move_around_object, random_coll_name)
+        convex_hull_obj.hide_render = True
+        # start_cam, end_cam = create_cams(move_around_object, mat, min_scale, max_scale)
+        start_cam, end_cam = create_cams(convex_hull_obj, convex_hull_obj.matrix_world, min_scale, max_scale)
 
         n_frames = props.n_frames
         knots = [0, n_frames - 1]
@@ -338,6 +354,8 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         wm.progress_update(3)
 
         for i, metric in enumerate(metrics):
+            convex_hull_obj.hide_set(False)
+            move_around_object.hide_set(True)
             print(metric)
             try:
                 self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
@@ -357,11 +375,14 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             animate_camera(self._path, cams[i])
 
             if render_animation:
+                convex_hull_obj.hide_set(True)
+                move_around_object.hide_set(False)
                 filenames.append(f"{exporting_path}\\{metric}.mp4")
                 render_scene(cams[i], filenames[-1], end_frame=n_frames)
             wm.progress_update(3 + 90 / len(metrics) * (i + 1))
 
         if render_animation:
+            # convex_hull_obj.hide_set(True)
             start_pos, end_pos = get_look_at_points([start_cam, end_cam])
             start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name)
             # copy state before
