@@ -17,11 +17,12 @@ def add_path_object(n_points, collection_name, curve_name='CameraCurve'):
 
     # map coords to spline
     polyline = curve_data.splines.new('POLY')
-    polyline.points.add(n_points-1)
+    polyline.points.add(n_points - 1)
 
     bpy.data.collections[collection_name].objects.link(curve_obj)
 
     return curve_obj
+
 
 def update_path(path_obj, coords, type="POLY"):
     '''
@@ -30,12 +31,12 @@ def update_path(path_obj, coords, type="POLY"):
 
     # the object has no spline data, not enough or too many vertices
     if len(path_obj.data.splines) == 0 or \
-        len(path_obj.data.splines[0].points) != len(coords):
-        
+            len(path_obj.data.splines[0].points) != len(coords):
+
         path_obj.data.splines.clear()
         polyline = path_obj.data.splines.new(type)
-        polyline.points.add(len(coords)-1)
-    
+        polyline.points.add(len(coords) - 1)
+
     else:
         polyline = path_obj.data.splines[0]
 

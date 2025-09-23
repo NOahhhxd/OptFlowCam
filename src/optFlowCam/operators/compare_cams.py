@@ -8,6 +8,40 @@ from ..objects.render import render_scene, render_single_image  # , combineClips
 
 from ..interpolation import interpolate_keyframes
 from random import randint, random
+import bmesh
+
+def create_convex_hull_object(obj, collection):
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    ch = bmesh.ops.convex_hull(bm, input=bm.verts)
+    # len(obj.data.polygons) + len(obj.data.vertices) + len(obj.data.edges)
+    # types = list(set([type(i) for i in ch["geom"]]))
+    # [list(filter(lambda x: type(x)==i, ch["geom"])) for i in types]
+    vertices = []
+    faces = []
+    edges = []
+    for elem in ch["geom"]:
+        typestring = str(type(elem))
+        if typestring.find("BMVert") > -1:
+            vertices.append(elem)
+        elif typestring.find("BMFace") > -1:
+            faces.append(elem)
+        elif typestring.find("BMEdge") > -1:
+            edges.append(elem)
+
+    idx_map = {elem.index: i for i, elem in enumerate(vertices)}
+    coords = [obj.matrix_world@vert.co for vert in vertices]
+    faces_mesh = [[idx_map[i.index] for i in face.verts] for face in faces]
+    edges_mesh = [[idx_map[i.index] for i in edge.verts] for edge in edges]
+    # https://b3d.interplanety.org/en/how-to-create-mesh-through-the-blender-python-api/
+    new_mesh = bpy.data.meshes.new('convex_hull')
+    new_mesh.from_pydata(coords, edges_mesh, faces_mesh)
+    new_mesh.update()
+    # make object from mesh
+    new_object = bpy.data.objects.new('convex_hull', new_mesh)
+    # add object to scene collection
+    collection.objects.link(new_object)
+    return new_object
 
 
 def create_cam(position, view, up, scale, focal):
@@ -128,7 +162,7 @@ def get_look_at_points(cams):
     scene = context.scene
     # hit, loc, norm_0, face_idx, obj_0, mw_0 = scene.ray_cast(vl.depsgraph, start, direction)
     return [scene.ray_cast(vl.depsgraph, Vector(cam["position"]), Vector(cam["view"]))[1] for cam in cams]
-    return [Vector(cam["position"]) + cam["frustum_scale"] * cam["focal"] * Vector(cam["view"]) for cam in cams]
+    # return [Vector(cam["position"]) + cam["frustum_scale"] * cam["focal"] * Vector(cam["view"]) for cam in cams]
 
 
 def create_spheres_at(positions, collection_name):

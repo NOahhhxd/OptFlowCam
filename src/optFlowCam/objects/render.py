@@ -23,6 +23,7 @@ def render_single_image(cam, file_path):
     scene.render.resolution_y = 1080
     scene.render.image_settings.file_format = 'PNG'
     bpy.ops.render.render(animation=False, write_still=True)
+
 """
 import moviepy as mp
 from random import shuffle

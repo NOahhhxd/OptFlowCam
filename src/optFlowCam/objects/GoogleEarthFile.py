@@ -249,7 +249,16 @@ def get_height(position, center, radius):
     real_distance = 6371_000 * distance / radius
     return real_distance - 6371_000 # nur Distanz bis zur Erdoberfläche
 
-
+def otherATan2(x,y):
+    if x > 0:
+        return math.atan(y/x)
+    if x == 0:
+        math.pi/2*(-1*y<0)
+    if x < 0 and y >= 0:
+        return math.atan(y/x) + math.pi
+    if x < 0 and y < 0:
+        return math.atan(y/x) - math.pi
+    return 0
 
 def map_to_plane(position, earth_center):
     # https://en.wikipedia.org/wiki/UV_mapping
@@ -267,28 +276,18 @@ def map_to_plane(position, earth_center):
     lat = math.atan2(z, math.hypot(x, y))  # [-pi/2, pi/2]
     long = math.atan2(y, x)
     """
-    long, lat = math.acos(z), otherATan2(x,y)
+    # long, lat = math.acos(z), otherATan2(x,y)
+    lat,long = math.pi / 2 - math.acos(z), otherATan2(x, y)
     return long, lat
 
 
 def map_uv_to_longlat(u, v):
     # longitude = (u * 360) - 180
     # latitude = (v * 180) - 90
-    return 90-math.degrees(u), math.degrees(v)
+    return math.degrees(u), math.degrees(v)
 
 def extract_2d_position(position, earth_center, earth_radius):
     return *map_uv_to_longlat(*map_to_plane(position, earth_center)), get_height(position, earth_center, earth_radius)
-
-def otherATan2(x,y):
-    if x > 0:
-        return math.atan(y/x)
-    if x == 0:
-        math.pi/2*(-1*y<0)
-    if x < 0 and y >= 0:
-        return math.atan(y/x) + math.pi
-    if x < 0 and y < 0:
-        return math.atan(y/x) - math.pi
-    return 0
 
 
 def extract_rotation(pos, forward, up, earth):
@@ -320,7 +319,7 @@ def extract_rotation(pos, forward, up, earth):
     rotated_earth_pos = matrix.inverted() @ earth
     # pos_to_earth = (earth-pos).normalized()
     # -z = vorne   y = oben   x = rechts
-    x, z, y = rotated_earth_pos.normalized()
+    x, y, z = rotated_earth_pos.normalized()
     """
     u = 0.5 + (np.arctan2(d[1], d[0])) / (2 * math.pi)
     v = 0.5 + np.arcsin(d[2]) / math.pi
@@ -329,7 +328,17 @@ def extract_rotation(pos, forward, up, earth):
     lat = math.atan2(z, math.hypot(x, y))  # [-pi/2, pi/2]
     long = math.atan2(y, x)
     """
-    long, lat = math.pi/2-math.acos(z), otherATan2(x, y)
+    # passt, wenn (1,0,0) eine Achse ist und (0,0,1) andere
+    # jetzt ist (0,0,-1) und (1,0,0) andere Achse
+    # lat, long = math.pi/2-math.acos(z), otherATan2(x, y)
+    # lat, long = math.pi/2-math.acos(x), -otherATan2(-z, y)+math.pi
+    # lat, long = -(math.pi/2-math.acos(x)), -otherATan2(-z, y)
+
+    lat, long = -(math.pi / 2 - math.acos(y)), -otherATan2(-z, x)
+    # long ist wahrscheinlich eher rotZ => long muss dann noch als Winkel zwischen rotiertem (0,0,1) Vektor und (0,1,0)-berechnet werden
+    # other = otherATan2(y, -z)
+    # potentieller Wert für rotZ: math.degrees((Matrix.Rotation(long, 4, 'Z') @ Matrix.Rotation(lat, 4, 'X') @ Vector([0, 0, -1])).angle(middle_n))
+    #in anderer Methode: lat,long = math.pi / 2 - math.acos(z), otherATan2(x, y)
     return long, lat
 
 
@@ -388,7 +397,7 @@ class GoogleEarthStudio:
         self.longitudes.append({"time":time, "value":get_relative_value(long, -180, 180)}) # -180 bis +180
         self.latitudes.append({"time":time, "value":get_relative_value(lat, -90, 90)}) # -90 bis +90
         self.distances.append({"time":time, "value":get_relative_value(dist, -500, 65117481)}) # -500 bis 65117481
-        self.rotationsX.append({"time":time, "value":get_relative_value(rotX, -math.pi,math.pi)}) # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
-        self.rotationsY.append({"time":time, "value":get_relative_value(rotY, 0,math.pi/2)}) # 0° bis 180° || 0 - PI
+        self.rotationsX.append({"time":time, "value":get_relative_value(rotX, 0,2*math.pi)}) # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
+        self.rotationsY.append({"time":time, "value":get_relative_value(rotY, 0,math.pi)}) # 0° bis 180° || 0 - PI
 
 
