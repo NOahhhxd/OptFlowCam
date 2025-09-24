@@ -122,6 +122,56 @@ def new_face(face, insert_idx):
     return face_0, face_1, face_2
 
 
+def shortest_path_of(path):
+    # better idea (maybe => less intersection calculations)
+    """
+    1. find all lines that have no intersection with the mesh
+    2. don't take the ones tha are fully inside another line (but potentially they are also necessary)
+    3. sort lines from longest to shortest
+    4. remove the shorter lines with intersections to longer lines
+    5. remove the corresponding points of the path
+    """
+    # simple idea
+    context = bpy.context
+    vl = context.view_layer
+    scene = context.scene
+    # worst case: O(n^3/6) or O(n/3 * n * n/2)
+    # more likely: O(k * n^2/2) or O(k * n * n/2) with k << n
+    while True:
+        print(len(path))
+        longest_line = None
+        for idx, coord in enumerate(path):
+            for i in range(len(path) - 1, idx+1, -1):
+                if longest_line and longest_line[2] > i - idx:
+                    break
+                direction = Vector(path[i] - coord)
+                length = direction.length
+                hit, loc, norm_0, face_idx, obj_0, mw_0 = scene.ray_cast(vl.depsgraph, coord,
+                                                                         direction, distance=length)
+                if not hit or (loc - coord).length > length:
+                    if not longest_line:
+                        longest_line = (idx, i, i - idx)
+                    elif longest_line and i - idx > longest_line[2]:
+                        longest_line = (idx, i, i - idx)
+                    break
+        if not longest_line:
+            return path
+        else:
+            del path[longest_line[0] + 1:longest_line[1]]
+        if len(path) < 3:
+            return path
+
+
+def lift_up(path, mesh, factor=0.00001):
+    result = []
+    mat_inv = mesh.matrix_world.inverted()
+    mat = mesh.matrix_world
+    for step in path:
+        hit, pos, normal, face_idx = mesh.closest_point_on_mesh(mat_inv@Vector(step))
+        result.append(mat@(pos+normal*factor))
+    return result
+
+
 class InterpolateGeodesic:
     def __init__(self, start_cam, end_cam, focal):
         start_eyepoint = start_cam["position"]
@@ -227,22 +277,12 @@ class InterpolateGeodesic:
 
     def find_geodesic_path_between(self, start_idx, end_idx):
         distance, path = self.geodesic_calc.geodesicDistance(end_idx, start_idx)
-
-        # path = [np.array(Vector(i) @ self.obj.matrix_world) for i in path]
-        summed_path = 0
-        for idx in range(1, len(path)):
-            summed_path += np.linalg.norm(path[idx] - path[idx - 1])
-
-        self.distance = summed_path
+        self.distance = distance
         print("From", start_idx)
         print("to", end_idx)
-        print("Distances", distance, "Summed distance: ", summed_path)
-        # print("Path", path)
-        """
-        TODO: add starting POV and ending POV to path
-            look1 = pos1 + s1 * focal * view1
-            look2 = pos2 + s2 * focal * view2
-        """
+        print("Distance", distance)
+        path = lift_up(path, self.mesh)
+        path = shortest_path_of(path)
         return path
 
     def mix_path_with_time(self, path, start_t, end_t):
@@ -524,8 +564,10 @@ def get_camera_distance(start: dict, end: dict,
     elif metric == "3DImageFlow":
 
         rho = kwargs["rho"]
-        w0 = s1; w1 = s2
-        u0 = 0;  u1 = np.linalg.norm(look_diff)
+        w0 = s1;
+        w1 = s2
+        u0 = 0;
+        u1 = np.linalg.norm(look_diff)
 
         _, _, S = get_zoom_pan_parameter_functions(w0, w1, u0, u1, rho)
 
@@ -535,7 +577,7 @@ def get_camera_distance(start: dict, end: dict,
         w0 = s1;
         w1 = s2
         u0 = 0;
-        u1 = 1 # interpolate_geodesics.get_distance()
+        u1 = 1  # interpolate_geodesics.get_distance()
 
         _, _, S = get_zoom_pan_parameter_functions(w0, w1, u0, u1, rho)
         # TODO: Die geodätische Länge mit einbeziehen
@@ -611,7 +653,7 @@ def resize(cam, t):
     # => scale = (pos - lookat)/(focal*view)
     coords = Vector(interpolate_geodesics.interpolate(t))
     pos = Vector(cam["position"])
-    cam["frustum_scale"] = (coords-pos).length / cam["focal"]
+    cam["frustum_scale"] = (coords - pos).length / cam["focal"]
     return cam
 
 
@@ -642,7 +684,6 @@ def interpolate_simple(start: dict, end: dict,
                               start=start, end=end,
                               **kwargs)
                 for t in np.linspace(0, 1, n)]
-
 
     if "generate_earth_file" in kwargs and kwargs["generate_earth_file"]:
         print("Exporting data...")

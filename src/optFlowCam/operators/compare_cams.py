@@ -4,12 +4,13 @@ import traceback
 
 from ..objects.camera import add_camera_object, animate_camera, update_camera
 from ..objects.path_geometry import add_path_object, update_path
-from ..objects.render import render_scene, render_single_image  # , combineClips
+from ..objects.render import render_scene, render_single_image, combine_clips  # , combineClips
 
 from ..interpolation import interpolate_keyframes
 from random import randint, random, shuffle
 import bmesh
-from math import pi
+from math import pi, sin, cos, radians
+
 
 def create_convex_hull_object(obj, collection_name):
     bm = bmesh.new()
@@ -30,7 +31,7 @@ def create_convex_hull_object(obj, collection_name):
         elif typestring.find("BMEdge") > -1:
             edges.append(elem)
     idx_map = {elem.index: i for i, elem in enumerate(vertices)}
-    coords = [obj.matrix_world@vert.co for vert in vertices]
+    coords = [obj.matrix_world @ vert.co for vert in vertices]
     faces_mesh = [[idx_map[i.index] for i in face.verts] for face in faces]
     edges_mesh = [[idx_map[i.index] for i in edge.verts] for edge in edges]
     # https://b3d.interplanety.org/en/how-to-create-mesh-through-the-blender-python-api/
@@ -75,16 +76,17 @@ def create_cam_2(vertex, matrix, focal, scale_base, min_scale, max_scale):
 
 
 def create_cam_from_face(face, matrix, focal, scale_base, min_scale, max_scale, vertices, other_face):
-    u, v = random() * 0.5, random() * 0.5
+    u = random()
+    v = random() * (1 - u)
     z = 1 - u - v
 
     other_coords = [matrix @ vertices[idx].co for idx in other_face.vertices]
-    vert_coords = [matrix @ vertices[idx].co for idx in face.vertices]
+    vert_coords = [vertices[idx].co for idx in face.vertices]
 
     look_at_position = z * other_coords[0] + v * other_coords[1] + u * other_coords[2]
 
     dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
-    position = vert_coords[0] + dist * focal * face.normal
+    position = matrix @ (vert_coords[0] + dist * focal * face.normal)
     direction = look_at_position - position
     direction_n = direction.normalized()
     scale = direction.length / focal
@@ -122,13 +124,26 @@ def add_material(objects, color, transparent=False):
     return mat
 
 
+def random_pos_squared2(vertex, matrix, r):
+    x = random()
+    theta = (x ** 2 + x ** (1 / 2)) / 2 * radians(80)
+    phi = random() * 2 * pi
+    x = r * sin(theta) * cos(phi)
+    y = r * sin(theta) * sin(phi)
+    z = cos(theta)
+    rotation_vec = Vector([x, y, z])
+    rotation_vec.rotate(Vector([0, 0, 1]).rotation_difference(matrix @ vertex.normal))
+    cam_pos = matrix @ vertex.co + rotation_vec
+    return cam_pos
+
+
 def create_cams(object_mesh, matrix, min_scale, max_scale):
     vertices = object_mesh.data.vertices
     faces = object_mesh.data.polygons
     face_idx = list(range(len(faces)))
     shuffle(face_idx)
     shuffle(face_idx)
-    #start_idx = vertices_idx[0]
+    # start_idx = vertices_idx[0]
     """
     start_idx = randint(0, len(faces) - 1)  # randint(0, len(vertices) - 1)
 
@@ -144,14 +159,16 @@ def create_cams(object_mesh, matrix, min_scale, max_scale):
     focal = 1.3888888888888888
     start_face = faces[face_idx[0]]
     i = 1
-    while start_face.normal.angle(faces[face_idx[i]].normal)>pi/4:
-        i+=1
-    start_cam = create_cam_from_face(start_face, matrix, focal, scale_base, min_scale, max_scale, vertices, faces[face_idx[i]])
+    while start_face.normal.angle(faces[face_idx[i]].normal) > pi / 4:
+        i += 1
+    start_cam = create_cam_from_face(start_face, matrix, focal, scale_base, min_scale, max_scale, vertices,
+                                     faces[face_idx[i]])
     end_face = faces[face_idx[-1]]
     i = -2
     while end_face.normal.angle(faces[face_idx[i]].normal) > pi / 4:
         i -= 1
-    end_cam = create_cam_from_face(end_face, matrix, focal, scale_base, min_scale, max_scale, vertices, faces[face_idx[i]])
+    end_cam = create_cam_from_face(end_face, matrix, focal, scale_base, min_scale, max_scale, vertices,
+                                   faces[face_idx[i]])
 
     return start_cam, end_cam
 
@@ -382,7 +399,6 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             wm.progress_update(3 + 90 / len(metrics) * (i + 1))
 
         if render_animation:
-            # convex_hull_obj.hide_set(True)
             start_pos, end_pos = get_look_at_points([start_cam, end_cam])
             start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name)
             # copy state before
@@ -397,7 +413,8 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             # create and positioning cam
             cam = create_outside_cam(start_pos, end_pos, move_around_object, random_coll_name)
             # make photo
-            render_single_image(cam, f"{exporting_path}\\overview.png")
+            image_path = f"{exporting_path}\\overview.png"
+            render_single_image(cam, image_path)
             # undo everything
             move_around_object.data.materials.clear()
             for mat in mat_copy:
@@ -409,6 +426,8 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             bpy.data.objects.remove(start_sphere)
             bpy.data.objects.remove(cam)
             bpy.data.objects.remove(end_sphere)
+
+            combine_clips(filenames, image_path, exporting_path)
 
         """
         if len(filenames)>1:
