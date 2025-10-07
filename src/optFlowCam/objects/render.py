@@ -5,6 +5,7 @@ import bpy
 
 def render_scene(cam, file_path, start_frame=0, end_frame=100):
     scene = bpy.context.scene
+    scene.sequence_editor_clear()
     scene.camera = cam
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
     scene.render.filepath = file_path
@@ -14,7 +15,6 @@ def render_scene(cam, file_path, start_frame=0, end_frame=100):
     scene.frame_end = end_frame
     scene.render.image_settings.file_format = 'FFMPEG'
     scene.render.ffmpeg.format = 'MPEG4'
-
     bpy.ops.render.render(animation=True)
 
 

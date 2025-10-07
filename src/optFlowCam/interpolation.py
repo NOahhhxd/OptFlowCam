@@ -74,12 +74,12 @@ def shortest_path_of(path):
             return path
 
 
-def lift_up(path, mesh, factor=0.00001):
+def lift_up(path, obj, factor=0.00001):
     result = []
-    mat_inv = mesh.matrix_world.inverted()
-    mat = mesh.matrix_world
+    mat_inv = obj.matrix_world.inverted()
+    mat = obj.matrix_world
     for step in path:
-        hit, pos, normal, face_idx = mesh.closest_point_on_mesh(mat_inv@Vector(step))
+        hit, pos, normal, face_idx = obj.closest_point_on_mesh(mat_inv@Vector(step))
         result.append(mat@(pos+normal*factor))
     return result
 
@@ -185,12 +185,17 @@ class InterpolateGeodesic:
 
     def find_geodesic_path_between(self, start_idx, end_idx):
         distance, path = self.geodesic_calc.geodesicDistance(end_idx, start_idx)
-        self.distance = distance
+        # self.distance = distance
         print("From", start_idx)
         print("to", end_idx)
         print("Distance", distance)
-        path = lift_up(path, self.mesh)
+        path = lift_up(path, self.obj)
         path = shortest_path_of(path)
+        distance = 0
+        for i in range(1, len(path)):
+            distance += np.linalg.norm(path[i] - path[i - 1])
+        self.distance = distance
+        print(path)
         return path
 
     def mix_path_with_time(self, path, start_t, end_t):
@@ -514,7 +519,8 @@ def cam_from_params2(u: float, w: float,
     scale = w
 
     lookat = m(u)
-    pos = lookat - scale * focal * view
+    print("lookat", lookat)
+    pos = np.array(lookat) - np.array(scale * focal * view)
 
     cam = {
         "position": pos.tolist(),
