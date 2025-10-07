@@ -238,6 +238,8 @@ template = """{
     }
   }
 }"""
+
+
 def get_height(position, center, radius):
     distance = (position - center).length
     """
@@ -247,18 +249,20 @@ def get_height(position, center, radius):
     """
     # Distanz des Erdmittelpunkts zur Kamera "in echt"
     real_distance = 6371_000 * distance / radius
-    return real_distance - 6371_000 # nur Distanz bis zur Erdoberfläche
+    return real_distance - 6371_000  # nur Distanz bis zur Erdoberfläche
 
-def otherATan2(x,y):
+
+def otherATan2(x, y):
     if x > 0:
-        return math.atan(y/x)
+        return math.atan(y / x)
     if x == 0:
-        math.pi/2*(-1*y<0)
+        math.pi / 2 * (-1 * y < 0)
     if x < 0 and y >= 0:
-        return math.atan(y/x) + math.pi
+        return math.atan(y / x) + math.pi
     if x < 0 and y < 0:
-        return math.atan(y/x) - math.pi
+        return math.atan(y / x) - math.pi
     return 0
+
 
 def map_to_plane(position, earth_center):
     # https://en.wikipedia.org/wiki/UV_mapping
@@ -267,7 +271,7 @@ def map_to_plane(position, earth_center):
     # u = 0.5 + (np.arctan2(d[2], d[0])) / (2 * math.pi)
     # v = 0.5 + np.arcsin(d[1]) / math.pi
     # if z = up-vector
-    x,y,z = d
+    x, y, z = d
     """
     u = 0.5 + (np.arctan2(d[1], d[0])) / (2 * math.pi)
     v = 0.5 + np.arcsin(d[2]) / math.pi
@@ -277,7 +281,7 @@ def map_to_plane(position, earth_center):
     long = math.atan2(y, x)
     """
     # long, lat = math.acos(z), otherATan2(x,y)
-    lat,long = math.pi / 2 - math.acos(z), otherATan2(x, y)
+    lat, long = math.pi / 2 - math.acos(z), otherATan2(x, y)
     return long, lat
 
 
@@ -286,8 +290,61 @@ def map_uv_to_longlat(u, v):
     # latitude = (v * 180) - 90
     return math.degrees(u), math.degrees(v)
 
+
 def extract_2d_position(position, earth_center, earth_radius):
     return *map_uv_to_longlat(*map_to_plane(position, earth_center)), get_height(position, earth_center, earth_radius)
+
+
+def project_point_into_ebene(point, vec, normal):
+    return point + (normal @ (vec - point)) * normal
+
+
+def extract_rotation(pos, forward, up, earth):
+    """
+    # 1. get world_matrix out of forward and up
+    matrix = make_lookAt_matrix(pos, forward, up)
+    # 2. multiplay earth-point with this matrix
+    rotated_earth_pos = matrix@earth
+    only_x_and_y = Vector([rotated_earth_pos.x, rotated_earth_pos.y])
+    rot_z = only_x_and_y.angle_signed(Vector([0,1]))
+    rotated_earth_pos.rotate(Matrix.Rotation(rot_z, 4, 'Z'))
+    only_y_z = Vector([rotated_earth_pos.y, rotated_earth_pos.z])
+    rot_x = only_y_z.angle_signed(Vector([0,1]))
+    # https://space.stackexchange.com/questions/59489/determine-yaw-pitch-roll-from-two-vectors
+    #rot_y = math.atan2(x, z)
+    #rot_x = math.atan2(y, math.hypot(x, z))
+    # rot_z = math.atan2(y, x)
+    # rot_x = math.atan2(math.hypot(x, y), z)
+    # rot_y = math.atan2(math.hypot(y, x), z)
+    # -, weil es bisher besser passt
+    # z, weil das die View-Achse der Kamera ist => das ist die XRotation laut Google-Earth
+    #
+    # return -rot_z, rot_y
+    return rot_z,rot_x
+    """
+    matrix = make_lookAt_matrix(pos, forward, up)
+    # 2. multiplay earth-point with this matrix
+    earth_up = Vector((0, 0, 1))
+    rotated_earth_pos = matrix.inverted() @ earth
+    rotated_up = matrix.inverted() @ earth_up
+    # pos_to_earth = (earth-pos).normalized()
+    # -z = vorne   y = oben   x = rechts
+    # Idee
+    x, y, z = rotated_earth_pos
+    rotZ = -math.atan2(-y,-x)
+    rotY = -math.acos(z / rotated_earth_pos.length)
+
+    cam_dir = Vector([0, 0, -1])
+    earth_rotation = rotated_earth_pos.rotation_difference(cam_dir)
+    rotated_earth_pos.rotate(earth_rotation)
+    rotated_up.rotate(earth_rotation)
+    normal = rotated_up.cross(-rotated_earth_pos).normalized()
+    cam_up = Vector([0, 1, 0])
+    cam_pos = Vector([0, 0, 0])
+    new_up = project_point_into_ebene(cam_up, cam_pos, normal)
+    x, y, z = new_up
+    rotX = -math.atan2(x, y)
+    return rotX, rotY, rotZ
 
 
 def extract_rotation(pos, forward, up, earth):
@@ -316,9 +373,53 @@ def extract_rotation(pos, forward, up, earth):
     """
     matrix = make_lookAt_matrix(pos, forward, up)
     # 2. multiplay earth-point with this matrix
+    earth_up = Vector((0, 0, 1))
     rotated_earth_pos = matrix.inverted() @ earth
+    rotated_up = matrix.inverted() @ earth_up
     # pos_to_earth = (earth-pos).normalized()
     # -z = vorne   y = oben   x = rechts
+
+    # Idee
+    """ Idee
+    Ausgangslage:
+    1. in Cam-Space transformieren
+    2. Richtung Erdmittelpunkt rotieren
+    3. up-Vektor nach oben rotieren
+    
+    Aktionen:
+    1. rotationX = tan2(x,y) => x,y aus der transformierten Kamerarichtung
+    2. rotationY =   
+    """
+
+    # Idee
+    x, y, z = rotated_earth_pos
+    rotZ = -math.atan2(x, y)
+    rotY = -math.acos(z / rotated_earth_pos.length)
+
+    cam_dir = Vector([0, 0, -1])
+    earth_rotation = rotated_earth_pos.rotation_difference(cam_dir)
+    rotated_earth_pos.rotate(earth_rotation)
+
+    rotated_up.rotate(earth_rotation)
+
+    normal = rotated_up.cross(-rotated_earth_pos).normalized()
+    cam_up = Vector([0, 1, 0])
+    cam_pos = Vector([0, 0, 0])
+    new_up = project_point_into_ebene(cam_up, cam_pos, normal)
+    x, y, z = new_up
+    rotX = -math.atan2(x, y)
+
+    return rotX, rotY, rotZ
+
+    rot_diff = rotated_earth_pos.rotation_difference(cam_dir)
+    cam_dir.rotate(rot_diff)
+    rotated_up.rotate(rot_diff)
+    upX, upY, _ = rotated_up
+    rotZ = otherATan2(upX, upY)
+
+    x, y, z = cam_dir.normalized()
+    rotY, rotX = -(math.pi / 2 - math.acos(y)), otherATan2(-z, x)
+
     x, y, z = rotated_earth_pos.normalized()
     """
     u = 0.5 + (np.arctan2(d[1], d[0])) / (2 * math.pi)
@@ -334,12 +435,16 @@ def extract_rotation(pos, forward, up, earth):
     # lat, long = math.pi/2-math.acos(x), -otherATan2(-z, y)+math.pi
     # lat, long = -(math.pi/2-math.acos(x)), -otherATan2(-z, y)
 
-    lat, long = -(math.pi / 2 - math.acos(y)), -otherATan2(-z, x)
+    ### Neeeee
+    # z-Achse ist jetzt (0,0,-1) und andere Achse
+
+    # lat, long = -(math.pi / 2 - math.acos(y)), -otherATan2(-z, x)
+    lat, long = -(math.pi / 2 - math.acos(y)), otherATan2(-z, x)
     # long ist wahrscheinlich eher rotZ => long muss dann noch als Winkel zwischen rotiertem (0,0,1) Vektor und (0,1,0)-berechnet werden
     # other = otherATan2(y, -z)
     # potentieller Wert für rotZ: math.degrees((Matrix.Rotation(long, 4, 'Z') @ Matrix.Rotation(lat, 4, 'X') @ Vector([0, 0, -1])).angle(middle_n))
-    #in anderer Methode: lat,long = math.pi / 2 - math.acos(z), otherATan2(x, y)
-    return long, lat
+    # in anderer Methode: lat,long = math.pi / 2 - math.acos(z), otherATan2(x, y)
+    return long, lat, 0  # TODO
 
 
 def extract_data_from_cam(cam, earth_center, earth_radius):
@@ -356,8 +461,8 @@ def extract_data_from_cam(cam, earth_center, earth_radius):
     view = Vector(cam["view"])
     up = Vector(cam["up"])
     long, lat, height = extract_2d_position(position, earth_center, earth_radius)
-    rotX, rotY = extract_rotation(position, view, up, earth_center)
-    return long,lat,height,rotX,rotY
+    rotX, rotY, rotZ = extract_rotation(position, view, up, earth_center)
+    return long, lat, height, rotX, rotY, rotZ
 
 
 def get_relative_value(value, min_value, max_value):
@@ -365,7 +470,7 @@ def get_relative_value(value, min_value, max_value):
 
 
 class GoogleEarthStudio:
-    def __init__(self, frames=100, name="GoogleEarth", frame_rate=24, earth_center=Vector([0,0,0]), earth_radius=10):
+    def __init__(self, frames=100, name="GoogleEarth", frame_rate=24, earth_center=Vector([0, 0, 0]), earth_radius=10):
         self.frames = frames
         self.name = name
         self.frame_rate = frame_rate
@@ -376,9 +481,12 @@ class GoogleEarthStudio:
         self.distances = []
         self.rotationsX = []
         self.rotationsY = []
+        self.rotationsZ = []
 
     def createAnimation(self, path):
-        json_data = json.loads(template.replace("{frames}", str(self.frames)).replace("{frame_rate}", str(self.frame_rate)).replace("{name}", self.name))
+        json_data = json.loads(
+            template.replace("{frames}", str(self.frames)).replace("{frame_rate}", str(self.frame_rate)).replace(
+                "{name}", self.name))
         positions = json_data["scenes"][0]["attributes"][0]["attributes"][0]["attributes"][0]["attributes"]
         rotations = json_data["scenes"][0]["attributes"][0]["attributes"][2]["attributes"]
 
@@ -387,17 +495,18 @@ class GoogleEarthStudio:
         positions[2]["keyframes"] = self.distances
         rotations[0]["keyframes"] = self.rotationsX
         rotations[1]["keyframes"] = self.rotationsY
+        rotations[2]["keyframes"] = self.rotationsZ
 
         with open(path, "w", encoding='utf-8') as f:
             json.dump(json_data, f, ensure_ascii=False)
 
     def append_frame(self, cam, frame):
-        long, lat, dist, rotX, rotY = extract_data_from_cam(cam, self.earth_center, self.earth_radius)
-        time = frame/self.frames
-        self.longitudes.append({"time":time, "value":get_relative_value(long, -180, 180)}) # -180 bis +180
-        self.latitudes.append({"time":time, "value":get_relative_value(lat, -90, 90)}) # -90 bis +90
-        self.distances.append({"time":time, "value":get_relative_value(dist, -500, 65117481)}) # -500 bis 65117481
-        self.rotationsX.append({"time":time, "value":get_relative_value(rotX, 0,2*math.pi)}) # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
-        self.rotationsY.append({"time":time, "value":get_relative_value(rotY, 0,math.pi)}) # 0° bis 180° || 0 - PI
-
-
+        long, lat, dist, rotX, rotY, rotZ = extract_data_from_cam(cam, self.earth_center, self.earth_radius)
+        time = frame / self.frames
+        self.longitudes.append({"time": time, "value": get_relative_value(long, -180, 180)})  # -180 bis +180
+        self.latitudes.append({"time": time, "value": get_relative_value(lat, -90, 90)})  # -90 bis +90
+        self.distances.append({"time": time, "value": get_relative_value(dist, -500, 65117481)})  # -500 bis 65117481
+        self.rotationsX.append({"time": time, "value": get_relative_value(rotX, 0,
+                                                                          2 * math.pi)})  # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
+        self.rotationsY.append({"time": time, "value": get_relative_value(rotY, 0, math.pi)})  # 0° bis 180° || 0 - PI
+        self.rotationsY.append({"time": time, "value": get_relative_value(rotZ, 0, math.pi)})  # 0° bis 180° || 0 - PI

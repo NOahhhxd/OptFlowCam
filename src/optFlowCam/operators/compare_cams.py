@@ -76,14 +76,17 @@ def create_cam_2(vertex, matrix, focal, scale_base, min_scale, max_scale):
 
 
 def create_cam_from_face(face, matrix, focal, scale_base, min_scale, max_scale, vertices, other_face):
+    """
     u = random()
     v = random() * (1 - u)
     z = 1 - u - v
+    """
+    u, v, w = Vector(random(), random(), random()).normalized()
 
     other_coords = [matrix @ vertices[idx].co for idx in other_face.vertices]
     vert_coords = [vertices[idx].co for idx in face.vertices]
 
-    look_at_position = z * other_coords[0] + v * other_coords[1] + u * other_coords[2]
+    look_at_position = w * other_coords[0] + v * other_coords[1] + u * other_coords[2]
 
     dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
     position = matrix @ (vert_coords[0] + dist * focal * face.normal)

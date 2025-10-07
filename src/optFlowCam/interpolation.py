@@ -17,94 +17,6 @@ from .objects.path_geometry import add_path_object, update_path
 from .utility import unpack_camera
 
 from .objects.GoogleEarthFile import GoogleEarthStudio
-
-"""
-class InterpolateGoogleEarth:
-    def __init__(self, start: ndarray, start_up: ndarray, end_up: ndarray, end: ndarray, earth: ndarray,
-                 earth_radius: float, t_begin: float, t_end: float, focal: float, num_points: int):
-        self.start = start
-        self.start_up = start_up
-        self.end = end
-        self.end_up = end_up
-        self.earth = earth
-        self.earth_radius = earth_radius
-        self.t_begin = t_begin
-        self.t_end = t_end
-        self.t_difference = self.t_end - self.t_begin
-        self.position = start
-        self.distance = self.calculate_distance_on_earth()
-        self.move_matrix = self.calculate_move_matrix()
-        self.moving_factor = 1
-        self.moving_value = normalized(self.position - self.earth)
-        self.focal = focal
-        self.num_points = num_points
-
-    def interpolate(self, t):
-        percentage = (t - self.t_begin) / self.t_difference
-        if 0 < percentage < 0.3:
-            return self.move_out()
-        elif 0.3 < percentage < 0.7:
-            return self.move_to_end()
-        else:
-            return self.move_in()
-
-    def cam_from_params(self, position: np.ndarray, view: np.ndarray, up: np.ndarray) -> dict:
-        cam = {
-            "position": position.tolist(),
-            "view": view.tolist(),
-            "up": up.tolist(),
-            "frustum_scale": 1,
-            "focal": self.focal
-        }
-        return cam
-
-    def move_out(self):
-        # cam rotation to earth
-        # cam distance to earth increases
-        # self.position += value
-        self.position -= self.moving_value * self.moving_factor
-        # in this method --> take initial up vector of end-cam
-        return self.cam_from_params(self.position, self.moving_value * (-1), self.start_up)
-
-    def move_to_end(self):
-        # project position on earth
-        # multiply (projected) position with matrix => multiply with distance
-        # return new cam
-        # up vector = rotated up vector with rot-matrix???
-        pass
-
-    def move_in(self):
-        # cam rotation to earth
-        # cam distance to earth decreases
-        # self.position += value
-        self.position += self.moving_value * self.moving_factor
-        # in this method --> take initial up vector of start-cam
-        return self.cam_from_params(self.position, self.moving_value * (-1), self.end_up)
-
-    def calculate_distance_on_earth(self):
-        p1 = self.project_point_on_earth(self.start)
-        p2 = self.project_point_on_earth(self.end)
-        return self.earth_distance_between(p1, p2)
-
-    def project_point_on_earth(self, end):
-        return self.earth + normalized(end - self.earth) * self.earth_radius
-
-    def earth_distance_between(self, p1, p2):
-        # calculate plane of p1, p2 and self.earth
-        # calculate distance
-        # = Bogenlänge des Winkels zwischen Vektoren
-        # cos(a) = p1*p2 / (|p1| * |p2|) => a = cos^-1( p1*p2 / (|p1| * |p2|) )
-        return math.acos(p1 * p2 / (np.abs(p1) * np.abs(p2))) * self.earth_radius
-
-    def calculate_move_matrix(self):
-        # calculate plane of p1, p2 and self.earth
-        # --p-r-o-j-e-c-t--p-o-i-n-t-s--i-n-t-o--p-l-a-n-e--
-        # divide dist by self.t_difference => get vector how far to move in one step
-        # transform vector back => get matrix => return
-        pass
-"""
-
-
 def export_geoposition_data(cams, num_frames, metric, file_path, earth_center=Vector((0, 0, 0)), earth_radius=10):
     if num_frames != len(cams):
         num_frames = len(cams)
@@ -181,10 +93,6 @@ class InterpolateGeodesic:
 
         context = bpy.context
         vl = context.view_layer
-        print("-----Ausgangspunkt + Richtung----------")
-        print(start_eyepoint, start_view_direction)
-        print("-----Endpunktpunkt + Richtung----------")
-        print(end_eyepoint, end_view_direction)
         obj, start_face_idx, start_loc = self.raycast(start=start_eyepoint, direction=start_view_direction)
         obj2, end_face_idx, end_loc = self.raycast(start=end_eyepoint, direction=end_view_direction)
         print("-----Startposition auf dem Mesh----------")
@@ -263,7 +171,7 @@ class InterpolateGeodesic:
         scene = context.scene
 
         hit, loc, norm_0, face_idx, obj_0, mw_0 = scene.ray_cast(vl.depsgraph, start, direction)
-        assert hit, "Kameras müssen auf ein Objekt gerichtet sein"
+        assert hit, "Cameras must be pointed at an object"
         return obj_0, face_idx, loc
 
     def get_idx(self, face_idx, loc):
