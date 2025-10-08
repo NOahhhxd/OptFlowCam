@@ -334,7 +334,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
     def generate_random_cam(self, context, event):
         wm = context.window_manager
         wm.progress_begin(0, 100)
-        metrics = ["3DImageFlowGeodesic", "3DImageFlow", "TransformationsLinear"]
+        metrics = ["3DImageFlowGeodesic", "3DImageFlow", "TransformationsLinear", "3DImageFlowGeodesicGreedy"]
         # Preparation
         coll = bpy.data.collections.new(f"random_cams")
         bpy.context.scene.collection.children.link(coll)
@@ -429,15 +429,17 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         if render_animation:
             start_pos, end_pos = get_look_at_points([start_cam, end_cam])
             start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name)
+            start_cam_sphere, end_cam_sphere = create_spheres_at([start_cam["position"], end_cam["position"]], random_coll_name)
             # copy state before
             mat_copy = move_around_object.data.materials[:]
-            # make object a little transparent
-            added_materials = [add_material([move_around_object], (1, 1, 1, 0.6), True),
+            # make object
+            added_materials = [add_material([move_around_object], (1, 1, 1, 0.6), False),
                                # mark path
-                               add_material([geodesic_path], (1, 0.46, 0, 1), False),
+                               # add_material([geodesic_path], (1, 0.46, 0, 1), False),
                                # mark start and end point (colored)
-                               add_material([start_sphere, end_sphere], (1, 0, 0, 1), False)]
-            geodesic_path.data.bevel_depth = 0.05
+                               add_material([start_sphere, end_sphere], (1, 0, 0, 1), False),
+                               add_material([start_cam_sphere, end_cam_sphere], (0, 0, 1, 1), False)]
+            # geodesic_path.data.bevel_depth = 0.05
             # create and positioning cam
             cam = create_outside_cam(start_pos, end_pos, move_around_object, random_coll_name)
             # make photo
@@ -447,7 +449,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             move_around_object.data.materials.clear()
             for mat in mat_copy:
                 move_around_object.data.materials.append(mat)
-            geodesic_path.data.bevel_depth = 0
+            # geodesic_path.data.bevel_depth = 0
             for mat in added_materials:
                 bpy.data.materials.remove(mat)
 

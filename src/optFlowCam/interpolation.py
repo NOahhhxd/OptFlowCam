@@ -85,11 +85,12 @@ def lift_up(path, obj, factor=0.00001):
 
 
 class InterpolateGeodesic:
-    def __init__(self, start_cam, end_cam, focal):
+    def __init__(self, start_cam, end_cam, focal, greedy_method = False):
         start_eyepoint = start_cam["position"]
         start_view_direction = start_cam["view"]
         end_eyepoint = end_cam["position"]
         end_view_direction = end_cam["view"]
+        self.greedy_geodesic = greedy_method
 
         context = bpy.context
         vl = context.view_layer
@@ -189,13 +190,15 @@ class InterpolateGeodesic:
         print("From", start_idx)
         print("to", end_idx)
         print("Distance", distance)
-        path = lift_up(path, self.obj)
-        path = shortest_path_of(path)
-        distance = 0
-        for i in range(1, len(path)):
-            distance += np.linalg.norm(path[i] - path[i - 1])
+        if self.greedy_geodesic:
+            path = lift_up(path, self.obj)
+            path = shortest_path_of(path)
+            distance = 0
+            for i in range(1, len(path)):
+                distance += np.linalg.norm(path[i] - path[i - 1])
+
         self.distance = distance
-        print(path)
+        # print(path)
         return path
 
     def mix_path_with_time(self, path, start_t, end_t):
@@ -580,7 +583,7 @@ def interpolate_simple(start: dict, end: dict,
 
     kwargs should contain the parameter rho if metric==3DImageFlow.
     '''
-    if metric == "3DImageFlowGeodesic":
+    if "3DImageFlowGeodesic" in metric:
         global interpolate_geodesics
         interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal)
         if "geodesic_path_object" in kwargs and kwargs["geodesic_path_object"]:

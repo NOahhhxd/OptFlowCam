@@ -299,7 +299,156 @@ def project_point_into_ebene(point, vec, normal):
     return point + (normal @ (vec - point)) * normal
 
 
-def extract_rotation(pos, forward, up, earth):
+def theiselsIdee(pos, dir, earth_center, earth_radius):
+    """
+    1. Schnittpunkt der Sichtachse auf der Erde finden
+    hh := Multiply( Transpose(E+t*A),E+t*A)-r^2;
+
+    #solve(hh=0,t);
+
+    dd :=
+    -Multiply( Transpose(A),E)
+    + sqrt(
+    + r^2*Multiply( Transpose(A),A)
+    -Multiply( Transpose(A&xE),A&xE)
+    );
+    simplify(eval(hh,t=dd));
+
+    M := simplify(E+dd*A);
+
+    2. Spiegel Matrix aufstellen
+    MM_mirror := Matrix([
+    [-1,0,0],
+    [0,1,0],
+    [0,0,-1]]);
+
+###
+    3. Skalierung berechnen
+    s_pio := -dd/f;
+    M_pio := M;
+    RM_pio := Multiply( RM, MM_mirror);
+
+###
+
+A_pio := Vector([ RM_pio[1,3],RM_pio[2,3],RM_pio[3,3] ]);
+E_pio := M_pio - f*s_pio*A_pio;
+
+Longitude_pio := simplify(arctan( E_pio[2],E_pio[1]));
+Latitude_pio  := arctan( E_pio[3] , E_pio[1]/cos(Longitude_pio) );
+Altitude_pio := sqrt(Multiply( Transpose(E_pio),E_pio)) - r;
+
+RMO_pio := Matrix(3, 3, [
+[-sin(Longitude_pio), -sin(Latitude_pio)*cos(Longitude_pio), cos(Longitude_pio)*cos(Latitude_pio)],
+[cos(Longitude_pio), -sin(Latitude_pio)*sin(Longitude_pio), sin(Longitude_pio)*cos(Latitude_pio)],
+[0, cos(Latitude_pio), sin(Latitude_pio)]]);
+
+
+RM1_pio := Multiply( Transpose(RMO_pio) , Multiply( RM_pio, MM_mirror));
+== Weltmatrix ???
+
+#Tilt_pio := arccos(RM1_pio[3,3]);
+Tilt_pio := arctan( sqrt(RM1_pio[1,3]^2 + RM1_pio[2,3]^2) , RM1_pio[3,3] );
+Roll_pio := arctan( -RM1[3,1],RM1[3,2]);
+Pan_pio := arctan(-RM1[1,3],-RM1[2,3]);
+
+
+    """
+
+
+def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
+    from math import sin, cos, radians
+    lat, long, pan, tilt, roll = [radians(i) for i in [lat, long, pan, tilt, roll]]
+    """
+    A0 = Vector([cos(long) * cos(lat),
+                 sin(long) * cos(lat),
+                 sin(lat)
+                 ])
+    E = (alt + r) * A0
+    HY = Vector([0, 0, 1])
+    #
+    R0 = (HY.cross(A0)).normalized()
+    #
+    U0 = A0.cross(R0)
+    #
+    RM0 = Matrix([
+        [R0[0], U0[0], A0[0]],
+        [R0[1], U0[1], A0[1]],
+        [R0[2], U0[2], A0[2]]])
+    #
+    RM_Pan = Matrix([
+        [cos(pan), sin(pan), 0],
+        [-sin(pan), cos(pan), 0],
+        [0, 0, 1]])
+    #
+    RM_Tilt = Matrix([
+        [1, 0, 0],
+        [0, cos(tilt), -sin(tilt)],
+        [0, sin(tilt), cos(tilt)]])
+    #
+    RM_Roll = Matrix([
+        [cos(roll), sin(roll), 0],
+        [-sin(roll), cos(roll), 0],
+        [0, 0, 1]])
+    #
+    RM1 = ((RM_Pan @ RM_Tilt) @ RM_Roll)
+    #
+    RM = (RM0 @ RM1)
+    ## das hier war nicht mehr drinne
+    MM_mirror = Matrix([
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, 0, -1]])
+    #
+    RM_pio = RM @ MM_mirror
+    # RM1_pio := Multiply( Transpose(RMO_pio) , Multiply( RM_pio, MM_mirror));
+    # RM1_pio = RMO_pio.transposed() @ Multiply(RM_pio, MM_mirror));
+    ## bis hier
+    """
+    A0 = np.array([cos(long) * cos(lat),
+                   sin(long) * cos(lat),
+                   sin(lat)
+                   ])
+    E = Vector((alt + r) * A0)
+    HY = np.array([0, 0, 1])
+    R0 = np.cross(HY, A0)
+    R0 = R0 / np.linalg.norm(R0)
+    #
+    U0 = np.cross(A0, R0)
+    #
+    RM0 = np.array([
+        [R0[0], U0[0], A0[0]],
+        [R0[1], U0[1], A0[1]],
+        [R0[2], U0[2], A0[2]]
+    ])
+    RM_Pan = np.array([
+        [cos(pan), sin(pan), 0],
+        [-sin(pan), cos(pan), 0],
+        [0, 0, 1]])
+    #
+    RM_Tilt = np.array([
+        [1, 0, 0],
+        [0, cos(tilt), -sin(tilt)],
+        [0, sin(tilt), cos(tilt)]])
+    #
+    RM_Roll = np.array([
+        [cos(roll), sin(roll), 0],
+        [-sin(roll), cos(roll), 0],
+        [0, 0, 1]])
+    #
+    RM1 = ((RM_Pan @ RM_Tilt) @ RM_Roll)
+    #
+    RM = (RM0 @ RM1)
+    print(np.cross(RM[:, 1], RM[:, 2]))
+    up = Vector(RM[:, 1])
+    forward = -Vector(RM[:, 2])
+    print(RM)
+    # return RM_pio, E
+    return make_lookAt_matrix(E, forward, up), E, forward, up
+    # mat,pos = camMatrixByPosition(0,45,20,20,11,23,2,2)
+    # mat= camMatrixByPosition(0,0,20,180,15,180,2,2)
+
+
+def extract_rotation(pos, forward, up, scale, earth_radius):
     """
     # 1. get world_matrix out of forward and up
     matrix = make_lookAt_matrix(pos, forward, up)
@@ -322,7 +471,59 @@ def extract_rotation(pos, forward, up, earth):
     # return -rot_z, rot_y
     return rot_z,rot_x
     """
-    matrix = make_lookAt_matrix(pos, forward, up)
+    forward = -forward
+    # RIGHT = np.cross(up, forward)
+    #
+    # np.array([np.cross(RM[:, 1], RM[:, 2]), RM[:, 1], RM[:, 2]]).T
+    RM = np.array([np.cross(up, forward), up, forward]).T
+    E_pio = pos
+    """
+    Longitude_pio := simplify(arctan( E_pio[2],E_pio[1]));
+    Latitude_pio  := arctan( E_pio[3] , E_pio[1]/cos(Longitude_pio) );
+    Altitude_pio := sqrt(Multiply( Transpose(E_pio),E_pio)) - r;
+    
+    RMO_pio := Matrix(3, 3, [
+    [-sin(Longitude_pio), -sin(Latitude_pio)*cos(Longitude_pio), cos(Longitude_pio)*cos(Latitude_pio)], 
+    [cos(Longitude_pio), -sin(Latitude_pio)*sin(Longitude_pio), sin(Longitude_pio)*cos(Latitude_pio)], 
+    [0, cos(Latitude_pio), sin(Latitude_pio)]]);
+    
+    
+    RM1_pio := Multiply( Transpose(RMO_pio) , Multiply( RM_pio, MM_mirror));
+    
+    
+    #Tilt_pio := arccos(RM1_pio[3,3]);
+    Tilt_pio := arctan( sqrt(RM1_pio[1,3]^2 + RM1_pio[2,3]^2) , RM1_pio[3,3] );
+    Roll_pio := arctan( -RM1[3,1],RM1[3,2]);
+    Pan_pio := arctan(-RM1[1,3],-RM1[2,3]);
+    """
+    longitude = math.atan2(E_pio[1], E_pio[0])
+    latitude = math.atan2(E_pio[2], E_pio[0] / cos(longitude))
+    altitude = E_pio.length - earth_radius  # for resulting file ist must be scaled to earth scale
+    RMO_pio = np.array([
+        [-sin(longitude), -sin(latitude) * cos(longitude), cos(longitude) * cos(latitude)],
+        [cos(longitude), -sin(latitude) * sin(longitude), sin(longitude) * cos(latitude)],
+        [0, cos(latitude), sin(latitude)]])
+    #
+    RM1_pio = RMO_pio.T @ RM
+    # RM = (RM0 @ RM1)
+    # => RM1 = RM0 ^ -1 @ RM = RM0^T @ RM
+    Tilt_pio = math.atan2(math.sqrt(RM1_pio[0, 2] ** 2 + RM1_pio[1, 2] ** 2), RM1_pio[2, 2])
+    Roll_pio = math.atan2(-RM1_pio[2, 0], RM1_pio[2, 1])
+    Pan_pio = math.atan2(-RM1_pio[0, 2], -RM1_pio[1, 2])
+    return Tilt_pio, Roll_pio, Pan_pio
+
+    # matrix = make_lookAt_matrix(pos, forward, up)
+    """
+    Tilt_pio := arctan( sqrt(RM1_pio[1,3]^2 + RM1_pio[2,3]^2) , RM1_pio[3,3] );
+    Roll_pio := arctan( -RM1[3,1],RM1[3,2]);
+    Pan_pio := arctan(-RM1[1,3],-RM1[2,3]);
+
+    """
+    rotX = math.atan2(math.sqrt(matrix[0][2] ** 2 + matrix[1][2] ** 2), matrix[2][2])
+    rotY = math.atan2(-matrix[2][0], matrix[2][1])
+    rotZ = math.atan2(-matrix[0][2], -matrix[1][2])
+
+    return rotX, rotY, rotZ
     # 2. multiplay earth-point with this matrix
     earth_up = Vector((0, 0, 1))
     rotated_earth_pos = matrix.inverted() @ earth
@@ -331,7 +532,7 @@ def extract_rotation(pos, forward, up, earth):
     # -z = vorne   y = oben   x = rechts
     # Idee
     x, y, z = rotated_earth_pos
-    rotZ = -math.atan2(-y,-x)
+    rotZ = -math.atan2(-y, -x)
     rotY = -math.acos(z / rotated_earth_pos.length)
 
     cam_dir = Vector([0, 0, -1])

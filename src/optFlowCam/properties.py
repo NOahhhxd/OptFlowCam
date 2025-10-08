@@ -20,6 +20,7 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
         ("LookatLinear", "Look-at Interpolation", "Spline based on linearly interpolating the lookat point, position and up vector of the camera", "PARTICLE_TIP", 1),
         ("TransformationsLinear", "Transformation Interpolation", "Spline base on linearly interpolating position, rotation and look-at distance", "CON_ROTLIMIT", 2),
         ("3DImageFlowGeodesic","3DImageFlow with geodesic look-at path", "Optimal spline based on minimizing 3D image flow in camera frustum with geodesic look-at path", "MESH_CUBE", 3),
+        ("3DImageFlowGeodesicGreedy","3DImageFlow with greedy modified geodesic look-at path", "Optimal spline based on minimizing 3D image flow in camera frustum with greedy modified geodesic look-at path", "MESH_CUBE", 4),
     ]
 
     parametrization_options = [
