@@ -1,6 +1,7 @@
 import math, json, numpy as np
 from ..math import make_lookAt_matrix
 from mathutils import Vector, Matrix
+from math import sin,cos,atan2,acos,asin
 
 template = """{
   "modelVersion": 18,
@@ -408,7 +409,12 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
                    sin(long) * cos(lat),
                    sin(lat)
                    ])
-    E = Vector((alt + r) * A0)
+
+    # radius/distance           = 6371_000 / real_distance
+    # earth_radius/scale_factor = 6371_000 / (alt+6371_000)
+    # => scale_factor = earth_radius*(alt+6371_000)/6371_000
+    # before: E = Vector((alt+r) * A0)
+    E = Vector((r * (alt + 6371_000) / 6371_000) * A0)
     HY = np.array([0, 0, 1])
     R0 = np.cross(HY, A0)
     R0 = R0 / np.linalg.norm(R0)
@@ -448,7 +454,7 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
     # mat= camMatrixByPosition(0,0,20,180,15,180,2,2)
 
 
-def extract_rotation(pos, forward, up, scale, earth_radius):
+def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
     """
     # 1. get world_matrix out of forward and up
     matrix = make_lookAt_matrix(pos, forward, up)
@@ -471,11 +477,25 @@ def extract_rotation(pos, forward, up, scale, earth_radius):
     # return -rot_z, rot_y
     return rot_z,rot_x
     """
-    forward = -forward
+    """
+        cam = {
+            "position": pos.tolist(),
+            "view": view.tolist(),
+            "up": up.tolist(),
+            "frustum_scale": scale,
+            "focal": focal
+        }
+        """
+    # forward = -forward
+    # forward = -np.array(cam["view"])
+    forward = -np.array(cam["view"])
+    up = np.array(cam["up"])
+    pos = np.array(cam["position"]) - earth_position
     # RIGHT = np.cross(up, forward)
     #
     # np.array([np.cross(RM[:, 1], RM[:, 2]), RM[:, 1], RM[:, 2]]).T
     RM = np.array([np.cross(up, forward), up, forward]).T
+    print(RM)
     E_pio = pos
     """
     Longitude_pio := simplify(arctan( E_pio[2],E_pio[1]));
@@ -498,7 +518,7 @@ def extract_rotation(pos, forward, up, scale, earth_radius):
     """
     longitude = math.atan2(E_pio[1], E_pio[0])
     latitude = math.atan2(E_pio[2], E_pio[0] / cos(longitude))
-    altitude = E_pio.length - earth_radius  # for resulting file ist must be scaled to earth scale
+    altitude = Vector(E_pio).length - earth_radius  # for resulting file ist must be scaled to earth scale
     RMO_pio = np.array([
         [-sin(longitude), -sin(latitude) * cos(longitude), cos(longitude) * cos(latitude)],
         [cos(longitude), -sin(latitude) * sin(longitude), sin(longitude) * cos(latitude)],
@@ -510,7 +530,7 @@ def extract_rotation(pos, forward, up, scale, earth_radius):
     Tilt_pio = math.atan2(math.sqrt(RM1_pio[0, 2] ** 2 + RM1_pio[1, 2] ** 2), RM1_pio[2, 2])
     Roll_pio = math.atan2(-RM1_pio[2, 0], RM1_pio[2, 1])
     Pan_pio = math.atan2(-RM1_pio[0, 2], -RM1_pio[1, 2])
-    return Tilt_pio, Roll_pio, Pan_pio
+    return Pan_pio, Tilt_pio, Roll_pio
 
     # matrix = make_lookAt_matrix(pos, forward, up)
     """
@@ -548,7 +568,7 @@ def extract_rotation(pos, forward, up, scale, earth_radius):
     return rotX, rotY, rotZ
 
 
-def extract_rotation(pos, forward, up, earth):
+def extract_rotation_old(pos, forward, up, earth):
     """
     # 1. get world_matrix out of forward and up
     matrix = make_lookAt_matrix(pos, forward, up)
@@ -659,10 +679,8 @@ def extract_data_from_cam(cam, earth_center, earth_radius):
     }
     """
     position = Vector(cam["position"])
-    view = Vector(cam["view"])
-    up = Vector(cam["up"])
     long, lat, height = extract_2d_position(position, earth_center, earth_radius)
-    rotX, rotY, rotZ = extract_rotation(position, view, up, earth_center)
+    rotX, rotY, rotZ = extract_rotation(cam, earth_center, earth_radius)
     return long, lat, height, rotX, rotY, rotZ
 
 
@@ -686,7 +704,7 @@ class GoogleEarthStudio:
 
     def createAnimation(self, path):
         json_data = json.loads(
-            template.replace("{frames}", str(self.frames)).replace("{frame_rate}", str(self.frame_rate)).replace(
+            template.replace("{frames}", str(self.frames-1)).replace("{frame_rate}", str(self.frame_rate)).replace(
                 "{name}", self.name))
         positions = json_data["scenes"][0]["attributes"][0]["attributes"][0]["attributes"][0]["attributes"]
         rotations = json_data["scenes"][0]["attributes"][0]["attributes"][2]["attributes"]
@@ -710,4 +728,4 @@ class GoogleEarthStudio:
         self.rotationsX.append({"time": time, "value": get_relative_value(rotX, 0,
                                                                           2 * math.pi)})  # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
         self.rotationsY.append({"time": time, "value": get_relative_value(rotY, 0, math.pi)})  # 0° bis 180° || 0 - PI
-        self.rotationsY.append({"time": time, "value": get_relative_value(rotZ, 0, math.pi)})  # 0° bis 180° || 0 - PI
+        self.rotationsZ.append({"time": time, "value": get_relative_value(rotZ, 0, 2*math.pi)})  # 0° bis 180° || 0 - PI

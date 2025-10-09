@@ -416,7 +416,7 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         cam = cam_from_params(u, w, R_f(t), focal, look1, look_diff)
         return cam
 
-    elif metric == "3DImageFlowGeodesic":
+    elif "3DImageFlowGeodesic" in metric:
         rho = kwargs["rho"]
 
         w0 = s1
@@ -585,7 +585,8 @@ def interpolate_simple(start: dict, end: dict,
     '''
     if "3DImageFlowGeodesic" in metric:
         global interpolate_geodesics
-        interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal)
+        greedy = metric == "3DImageFlowGeodesicGreedy"
+        interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal, greedy_method=greedy)
         if "geodesic_path_object" in kwargs and kwargs["geodesic_path_object"]:
             interpolate_geodesics.update_path_object(kwargs["geodesic_path_object"])
         start_cam = clone_cam(start)
@@ -766,7 +767,7 @@ def disambiguate_spline(control_points: list, knots: list, spline: list):
 def interpolate_keyframes(control_points: list, knots: list,
                           focal: float, metric: str, method: str,
                           n: int = 101, **kwargs) -> list:
-    if (metric == "3DImageFlow" or metric == "3DImageFlowGeodesic") and not "rho" in kwargs:
+    if (metric == "3DImageFlow" or metric == "3DImageFlowGeodesic" or metric == "3DImageFlowGeodesicGreedy") and not "rho" in kwargs:
         kwargs["rho"] = np.sqrt(2)
         print("No named argument rho given for metric 3DImageFlow. Using default parameter sqrt(2).")
 
