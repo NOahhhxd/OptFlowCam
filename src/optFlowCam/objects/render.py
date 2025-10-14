@@ -44,32 +44,39 @@ def add_video(filepath, start, num, scene):
     elif num == 2:
         clip.transform.origin[0] = 1  # scene.render.resolution_x/8
         clip.transform.origin[1] = 1
-    else:
+    elif num == 3:
         clip.transform.origin[0] = 0  # scene.render.resolution_x/8
+        clip.transform.origin[1] = 0
+    else:
+        clip.transform.origin[0] = 1  # scene.render.resolution_x/8
         clip.transform.origin[1] = 0
     return clip
 
 
-def add_image(filepath, offset, num, scene, end):
+def add_image(filepath, num, scene, end):
     img = scene.sequence_editor.strips.new_image(
         name=f"Image_{num}",
         filepath=filepath,
         channel=num,
-        frame_start=0
+        frame_start=0,
+        frame_end=end
     )
+    """
     img.transform.scale_x = 0.5
     img.transform.scale_y = 0.5
     for i in range(offset, end + 1):
         img.transform.keyframe_insert("scale_x", frame=i)
         img.transform.keyframe_insert("scale_y", frame=i)
+    """
     img.transform.scale_x = 1
     img.transform.scale_y = 1
-    for i in range(offset // 2 + 1):
+    # for i in range(offset // 2 + 1):
+    for i in range(end):
         img.transform.keyframe_insert("scale_x", frame=i)
         img.transform.keyframe_insert("scale_y", frame=i)
     img.frame_final_duration = end
-    img.transform.origin[0] = 1
-    img.transform.origin[1] = 0
+    # img.transform.origin[0] = 1
+    # img.transform.origin[1] = 0
 
     return img
 
@@ -91,7 +98,7 @@ def combine_clips(file_paths, overview_path, path):
     scene.frame_start = 1
     clips = [add_video(file, START_OFFSET, idx + 1, scene) for idx, file in enumerate(file_paths)]
     scene.frame_end = max([clip.frame_final_end for clip in clips])
-    img = add_image(overview_path, START_OFFSET, 3, scene, scene.frame_end)
+    img = add_image(overview_path, 3, scene, START_OFFSET)
 
     bpy.ops.render.render(animation=True)
     with open(f"{path}\\solution.txt", "w+") as f:

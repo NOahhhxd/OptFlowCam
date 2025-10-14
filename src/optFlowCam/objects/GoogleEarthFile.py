@@ -444,38 +444,19 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
     RM1 = ((RM_Pan @ RM_Tilt) @ RM_Roll)
     #
     RM = (RM0 @ RM1)
-    print(np.cross(RM[:, 1], RM[:, 2]))
+    #print(np.cross(RM[:, 1], RM[:, 2]))
     up = Vector(RM[:, 1])
     forward = -Vector(RM[:, 2])
-    print(RM)
+    #print(RM)
     # return RM_pio, E
-    return make_lookAt_matrix(E, forward, up), E, forward, up
+    return make_lookAt_matrix(E, forward, up)# , E, forward, up
     # mat,pos = camMatrixByPosition(0,45,20,20,11,23,2,2)
     # mat= camMatrixByPosition(0,0,20,180,15,180,2,2)
 
 
 def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
     """
-    # 1. get world_matrix out of forward and up
-    matrix = make_lookAt_matrix(pos, forward, up)
-    # 2. multiplay earth-point with this matrix
-    rotated_earth_pos = matrix@earth
-    only_x_and_y = Vector([rotated_earth_pos.x, rotated_earth_pos.y])
-    rot_z = only_x_and_y.angle_signed(Vector([0,1]))
-    rotated_earth_pos.rotate(Matrix.Rotation(rot_z, 4, 'Z'))
-    only_y_z = Vector([rotated_earth_pos.y, rotated_earth_pos.z])
-    rot_x = only_y_z.angle_signed(Vector([0,1]))
-    # https://space.stackexchange.com/questions/59489/determine-yaw-pitch-roll-from-two-vectors
-    #rot_y = math.atan2(x, z)
-    #rot_x = math.atan2(y, math.hypot(x, z))
-    # rot_z = math.atan2(y, x)
-    # rot_x = math.atan2(math.hypot(x, y), z)
-    # rot_y = math.atan2(math.hypot(y, x), z)
-    # -, weil es bisher besser passt
-    # z, weil das die View-Achse der Kamera ist => das ist die XRotation laut Google-Earth
-    #
-    # return -rot_z, rot_y
-    return rot_z,rot_x
+    Method to extract the rotation of the camera in Google Earth Studio Format
     """
     """
         cam = {
@@ -531,141 +512,6 @@ def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
     Roll_pio = math.atan2(-RM1_pio[2, 0], RM1_pio[2, 1])
     Pan_pio = math.atan2(-RM1_pio[0, 2], -RM1_pio[1, 2])
     return Pan_pio, Tilt_pio, Roll_pio
-
-    # matrix = make_lookAt_matrix(pos, forward, up)
-    """
-    Tilt_pio := arctan( sqrt(RM1_pio[1,3]^2 + RM1_pio[2,3]^2) , RM1_pio[3,3] );
-    Roll_pio := arctan( -RM1[3,1],RM1[3,2]);
-    Pan_pio := arctan(-RM1[1,3],-RM1[2,3]);
-
-    """
-    rotX = math.atan2(math.sqrt(matrix[0][2] ** 2 + matrix[1][2] ** 2), matrix[2][2])
-    rotY = math.atan2(-matrix[2][0], matrix[2][1])
-    rotZ = math.atan2(-matrix[0][2], -matrix[1][2])
-
-    return rotX, rotY, rotZ
-    # 2. multiplay earth-point with this matrix
-    earth_up = Vector((0, 0, 1))
-    rotated_earth_pos = matrix.inverted() @ earth
-    rotated_up = matrix.inverted() @ earth_up
-    # pos_to_earth = (earth-pos).normalized()
-    # -z = vorne   y = oben   x = rechts
-    # Idee
-    x, y, z = rotated_earth_pos
-    rotZ = -math.atan2(-y, -x)
-    rotY = -math.acos(z / rotated_earth_pos.length)
-
-    cam_dir = Vector([0, 0, -1])
-    earth_rotation = rotated_earth_pos.rotation_difference(cam_dir)
-    rotated_earth_pos.rotate(earth_rotation)
-    rotated_up.rotate(earth_rotation)
-    normal = rotated_up.cross(-rotated_earth_pos).normalized()
-    cam_up = Vector([0, 1, 0])
-    cam_pos = Vector([0, 0, 0])
-    new_up = project_point_into_ebene(cam_up, cam_pos, normal)
-    x, y, z = new_up
-    rotX = -math.atan2(x, y)
-    return rotX, rotY, rotZ
-
-
-def extract_rotation_old(pos, forward, up, earth):
-    """
-    # 1. get world_matrix out of forward and up
-    matrix = make_lookAt_matrix(pos, forward, up)
-    # 2. multiplay earth-point with this matrix
-    rotated_earth_pos = matrix@earth
-    only_x_and_y = Vector([rotated_earth_pos.x, rotated_earth_pos.y])
-    rot_z = only_x_and_y.angle_signed(Vector([0,1]))
-    rotated_earth_pos.rotate(Matrix.Rotation(rot_z, 4, 'Z'))
-    only_y_z = Vector([rotated_earth_pos.y, rotated_earth_pos.z])
-    rot_x = only_y_z.angle_signed(Vector([0,1]))
-
-    # https://space.stackexchange.com/questions/59489/determine-yaw-pitch-roll-from-two-vectors
-    #rot_y = math.atan2(x, z)
-    #rot_x = math.atan2(y, math.hypot(x, z))
-    # rot_z = math.atan2(y, x)
-    # rot_x = math.atan2(math.hypot(x, y), z)
-    # rot_y = math.atan2(math.hypot(y, x), z)
-    # -, weil es bisher besser passt
-    # z, weil das die View-Achse der Kamera ist => das ist die XRotation laut Google-Earth
-    #
-    # return -rot_z, rot_y
-    return rot_z,rot_x
-    """
-    matrix = make_lookAt_matrix(pos, forward, up)
-    # 2. multiplay earth-point with this matrix
-    earth_up = Vector((0, 0, 1))
-    rotated_earth_pos = matrix.inverted() @ earth
-    rotated_up = matrix.inverted() @ earth_up
-    # pos_to_earth = (earth-pos).normalized()
-    # -z = vorne   y = oben   x = rechts
-
-    # Idee
-    """ Idee
-    Ausgangslage:
-    1. in Cam-Space transformieren
-    2. Richtung Erdmittelpunkt rotieren
-    3. up-Vektor nach oben rotieren
-    
-    Aktionen:
-    1. rotationX = tan2(x,y) => x,y aus der transformierten Kamerarichtung
-    2. rotationY =   
-    """
-
-    # Idee
-    x, y, z = rotated_earth_pos
-    rotZ = -math.atan2(x, y)
-    rotY = -math.acos(z / rotated_earth_pos.length)
-
-    cam_dir = Vector([0, 0, -1])
-    earth_rotation = rotated_earth_pos.rotation_difference(cam_dir)
-    rotated_earth_pos.rotate(earth_rotation)
-
-    rotated_up.rotate(earth_rotation)
-
-    normal = rotated_up.cross(-rotated_earth_pos).normalized()
-    cam_up = Vector([0, 1, 0])
-    cam_pos = Vector([0, 0, 0])
-    new_up = project_point_into_ebene(cam_up, cam_pos, normal)
-    x, y, z = new_up
-    rotX = -math.atan2(x, y)
-
-    return rotX, rotY, rotZ
-
-    rot_diff = rotated_earth_pos.rotation_difference(cam_dir)
-    cam_dir.rotate(rot_diff)
-    rotated_up.rotate(rot_diff)
-    upX, upY, _ = rotated_up
-    rotZ = otherATan2(upX, upY)
-
-    x, y, z = cam_dir.normalized()
-    rotY, rotX = -(math.pi / 2 - math.acos(y)), otherATan2(-z, x)
-
-    x, y, z = rotated_earth_pos.normalized()
-    """
-    u = 0.5 + (np.arctan2(d[1], d[0])) / (2 * math.pi)
-    v = 0.5 + np.arcsin(d[2]) / math.pi
-    """
-    """
-    lat = math.atan2(z, math.hypot(x, y))  # [-pi/2, pi/2]
-    long = math.atan2(y, x)
-    """
-    # passt, wenn (1,0,0) eine Achse ist und (0,0,1) andere
-    # jetzt ist (0,0,-1) und (1,0,0) andere Achse
-    # lat, long = math.pi/2-math.acos(z), otherATan2(x, y)
-    # lat, long = math.pi/2-math.acos(x), -otherATan2(-z, y)+math.pi
-    # lat, long = -(math.pi/2-math.acos(x)), -otherATan2(-z, y)
-
-    ### Neeeee
-    # z-Achse ist jetzt (0,0,-1) und andere Achse
-
-    # lat, long = -(math.pi / 2 - math.acos(y)), -otherATan2(-z, x)
-    lat, long = -(math.pi / 2 - math.acos(y)), otherATan2(-z, x)
-    # long ist wahrscheinlich eher rotZ => long muss dann noch als Winkel zwischen rotiertem (0,0,1) Vektor und (0,1,0)-berechnet werden
-    # other = otherATan2(y, -z)
-    # potentieller Wert für rotZ: math.degrees((Matrix.Rotation(long, 4, 'Z') @ Matrix.Rotation(lat, 4, 'X') @ Vector([0, 0, -1])).angle(middle_n))
-    # in anderer Methode: lat,long = math.pi / 2 - math.acos(z), otherATan2(x, y)
-    return long, lat, 0  # TODO
 
 
 def extract_data_from_cam(cam, earth_center, earth_radius):

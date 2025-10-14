@@ -11,6 +11,8 @@ from random import randint, random, shuffle
 import bmesh
 from math import pi, sin, cos, radians
 
+from ..utility import cam_to_sample
+
 
 def create_convex_hull_object(obj, collection_name):
     bm = bmesh.new()
@@ -153,9 +155,9 @@ def create_cams(object_mesh, matrix, min_scale, max_scale):
         face = faces[face_idx[i]]
         face_vertices = [vertices[idx] for idx in face.vertices]
         vec = Vector((random(), random(), random()))
-        u, v, w = vec/sum(vec)
-        lookat_pos = u*face_vertices[0].co + v*face_vertices[1].co + w*face_vertices[2].co
-        lookat_normal = u*face_vertices[0].normal + v*face_vertices[1].normal + w*face_vertices[2].normal
+        u, v, w = vec / sum(vec)
+        lookat_pos = u * face_vertices[0].co + v * face_vertices[1].co + w * face_vertices[2].co
+        lookat_normal = u * face_vertices[0].normal + v * face_vertices[1].normal + w * face_vertices[2].normal
         dist = scale_base * ((max_scale - min_scale) * random() + min_scale)
         pos, view = random_pos_squared2(lookat_pos, lookat_normal, matrix, dist)
         view_n = view.normalized()
@@ -334,23 +336,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
     def generate_random_cam(self, context, event):
         wm = context.window_manager
         wm.progress_begin(0, 100)
-        metrics = ["3DImageFlowGeodesic", "3DImageFlow", "TransformationsLinear", "3DImageFlowGeodesicGreedy"]
-        # Preparation
-        coll = bpy.data.collections.new(f"random_cams")
-        bpy.context.scene.collection.children.link(coll)
-        random_coll_name = coll.name
-
-        # create cams with paths
-        cams = []
-        geodesic_path = add_path_object(2, random_coll_name, "geodesic_path")
-        paths = []
-        for metric in metrics:
-            cam = add_camera_object(random_coll_name, camera_name=f"random_cam_{metric}")
-            # random_cam_name = cam.name
-            cams.append(cam)
-            random_cam_path = f"random_path_{metric}"
-            path = add_path_object(2, random_coll_name, random_cam_path)
-            paths.append(path)
+        metrics = ["3DImageFlowGeodesic", "3DImageFlowGeodesicGreedy", "3DImageFlow", "TransformationsLinear"]
 
         # op_props = context.scene.OFC.op_props
         props = context.scene.OFC.init_props
@@ -362,9 +348,29 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         exporting_path = props.export_dir
         min_scale = props.min_scale
         max_scale = props.max_scale
+        random_cams = props.random_cams
+        min_greedy_point_difference = props.min_greedy_point_difference
         if min_scale > max_scale:
             self.report({'ERROR_INVALID_INPUT'}, "min_scale must be smaller than max_scale")
             return {'CANCELLED'}
+
+        # Preparation
+        coll = bpy.data.collections.new(f"compare_cams")
+        bpy.context.scene.collection.children.link(coll)
+        random_coll_name = coll.name
+
+        # create cams with paths
+        cams = []
+        geodesic_paths = [add_path_object(2, random_coll_name, "geodesic_path"),
+                          add_path_object(2, random_coll_name, "modified_geodesic_path")]
+        paths = []
+        for metric in metrics:
+            cam = add_camera_object(random_coll_name, camera_name=f"compare_cam_{metric}")
+            # random_cam_name = cam.name
+            cams.append(cam)
+            random_cam_path = f"compare_path_{metric}"
+            path = add_path_object(2, random_coll_name, random_cam_path)
+            paths.append(path)
 
         context = bpy.context
         vl = context.view_layer
@@ -384,11 +390,28 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         convex_hull_obj.hide_render = True
         start_cam, end_cam = create_cams(convex_hull_obj, convex_hull_obj.matrix_world, min_scale, max_scale)
         """
-        start_cam, end_cam = create_cams(move_around_object, move_around_object.matrix_world, min_scale, max_scale)
+        start_cam, end_cam = None, None
+        n_frames = 100
+        knots = None
 
+        if random_cams:
+            start_cam, end_cam = create_cams(move_around_object, move_around_object.matrix_world, min_scale, max_scale)
+            n_frames = props.n_frames
+            knots = [0, n_frames - 1]
+        else:
+            keyframes = props.keyframes
+            if len(keyframes) != 2:
+                self.report({'ERROR_INVALID_INPUT'}, "Only 2 keyframes possible for comparison!")
+                return {'CANCELLED'}
 
-        n_frames = props.n_frames
-        knots = [0, n_frames - 1]
+            frame_start = keyframes[0].frame
+            frame_end = keyframes[-1].frame
+
+            n_frames = (frame_end - frame_start) + 1
+
+            start_cam, end_cam = [cam_to_sample(k.cam) for k in keyframes]
+            knots = [k.frame for k in keyframes]
+
         cam_samples = [start_cam, end_cam]
         filenames = []
 
@@ -404,7 +427,10 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
                 self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
                                                    metric, props.method, n_frames,
                                                    rho=props.rho, generate_earth_file=generate_earth_file,
-                                                   geodesic_path_object=geodesic_path, file_path=exporting_path)
+                                                   move_around_object=move_around_object,
+                                                   geodesic_path_object=geodesic_paths[i % 2],
+                                                   min_greedy_point_difference=min_greedy_point_difference,
+                                                   file_path=exporting_path)
             except Exception as e:
                 print(e)
                 traceback.print_exc()
@@ -429,7 +455,8 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         if render_animation:
             start_pos, end_pos = get_look_at_points([start_cam, end_cam])
             start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name)
-            start_cam_sphere, end_cam_sphere = create_spheres_at([start_cam["position"], end_cam["position"]], random_coll_name)
+            start_cam_sphere, end_cam_sphere = create_spheres_at([start_cam["position"], end_cam["position"]],
+                                                                 random_coll_name)
             # copy state before
             mat_copy = move_around_object.data.materials[:]
             # make object

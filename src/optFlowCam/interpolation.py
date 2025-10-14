@@ -17,6 +17,8 @@ from .objects.path_geometry import add_path_object, update_path
 from .utility import unpack_camera
 
 from .objects.GoogleEarthFile import GoogleEarthStudio
+
+
 def export_geoposition_data(cams, num_frames, metric, file_path, earth_center=Vector((0, 0, 0)), earth_radius=10):
     if num_frames != len(cams):
         num_frames = len(cams)
@@ -34,7 +36,7 @@ def new_face(face, insert_idx):
     return face_0, face_1, face_2
 
 
-def shortest_path_of(path):
+def shortest_path_of(path, min_distance=2):
     # better idea (maybe => less intersection calculations)
     """
     1. find all lines that have no intersection with the mesh
@@ -53,7 +55,7 @@ def shortest_path_of(path):
         print(len(path))
         longest_line = None
         for idx, coord in enumerate(path):
-            for i in range(len(path) - 1, idx+1, -1):
+            for i in range(len(path) - 1, idx + (min_distance - 1), -1):
                 if longest_line and longest_line[2] > i - idx:
                     break
                 direction = Vector(path[i] - coord)
@@ -79,18 +81,20 @@ def lift_up(path, obj, factor=0.00001):
     mat_inv = obj.matrix_world.inverted()
     mat = obj.matrix_world
     for step in path:
-        hit, pos, normal, face_idx = obj.closest_point_on_mesh(mat_inv@Vector(step))
-        result.append(mat@(pos+normal*factor))
+        hit, pos, normal, face_idx = obj.closest_point_on_mesh(mat_inv @ Vector(step))
+        result.append(mat @ (pos + normal * factor))
     return result
 
 
 class InterpolateGeodesic:
-    def __init__(self, start_cam, end_cam, focal, greedy_method = False):
+    def __init__(self, start_cam, end_cam, focal, greedy_method=False, min_greedy_point_difference=2):
         start_eyepoint = start_cam["position"]
         start_view_direction = start_cam["view"]
         end_eyepoint = end_cam["position"]
         end_view_direction = end_cam["view"]
         self.greedy_geodesic = greedy_method
+        if self.greedy_geodesic:
+            self.min_greedy_point_difference = min_greedy_point_difference
 
         context = bpy.context
         vl = context.view_layer
@@ -142,7 +146,7 @@ class InterpolateGeodesic:
         """
         ### Idee: Pfad durch BSpline der Punkte interpolieren lassen
         path = self.find_geodesic_path_between(idx, idx + 1)
-
+        print(f"Länge des {'modifizierten' if self.greedy_geodesic else ''} Pfads: {len(path)}")
         self.mix_path_with_time(path, start_t, end_t)
         # self.mix_advanced_path_with_time(path, start, start_t, end, end_t, focal)
 
@@ -192,7 +196,9 @@ class InterpolateGeodesic:
         print("Distance", distance)
         if self.greedy_geodesic:
             path = lift_up(path, self.obj)
+            print("before modification:", path[0], path[-1])
             path = shortest_path_of(path)
+            print("after modification:", path[0], path[-1])
             distance = 0
             for i in range(1, len(path)):
                 distance += np.linalg.norm(path[i] - path[i - 1])
@@ -235,7 +241,7 @@ class InterpolateGeodesic:
     def update_path_object(self, path_object):
         # from ..objects.path_geometry import add_path_object, update_path
         # path_object = add_path_object(2, collection_name, "geodesic_path")
-        update_path(path_object, [{"position": i[0]} for i in self.path], 'NURBS')
+        update_path(path_object, [{"position": i[0]} for i in self.path])
 
 
 interpolate_geodesics: InterpolateGeodesic = None
@@ -422,15 +428,15 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         w0 = s1
         w1 = s2
         u0 = 0
-        u1 = 1
-        # u1 = interpolate_geodesics.get_distance()  # np.linalg.norm(look_diff)
+        # u1 = 1
+        u1 = interpolate_geodesics.get_distance()  # np.linalg.norm(look_diff)
         # look_diff_n = np.zeros(3) if u1 < 1e-14 else normalized(look_diff)
         u, w = get_zoom_pan_parameter(t, w0, w1, u0, u1, rho)
 
         # look_at_point = m(u)
         # look_diff_n = interpolate_geodesics.get_distance()
         # cam = cam_from_params2(u, w, R_f(t), focal, look_at_point, look_diff_n)
-        cam = cam_from_params2(u, w, R_f(t), focal)
+        cam = cam_from_params2(u / u1, w, R_f(t), focal)
         # cam = cam_from_params2(u / u1, w, R_f(t), focal)
 
         return cam
@@ -586,13 +592,19 @@ def interpolate_simple(start: dict, end: dict,
     if "3DImageFlowGeodesic" in metric:
         global interpolate_geodesics
         greedy = metric == "3DImageFlowGeodesicGreedy"
-        interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal, greedy_method=greedy)
+        min_greedy_point_difference = 2
+        if "min_greedy_point_difference" in kwargs:
+            min_greedy_point_difference = kwargs["min_greedy_point_difference"]
+        interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal, greedy_method=greedy,
+                                                    min_greedy_point_difference=min_greedy_point_difference)
         if "geodesic_path_object" in kwargs and kwargs["geodesic_path_object"]:
             interpolate_geodesics.update_path_object(kwargs["geodesic_path_object"])
         start_cam = clone_cam(start)
-        resize(start_cam, 0)
         end_cam = clone_cam(end)
+        print("scale before: start = ", start_cam["frustum_scale"], ", end = ", end_cam["frustum_scale"])
+        resize(start_cam, 0)
         resize(end_cam, 1)
+        print("scale after: start = ", start_cam["frustum_scale"], ", end = ", end_cam["frustum_scale"])
         cams = [interpolate_t(t, focal, metric,
                               start=start_cam, end=end_cam,
                               **kwargs)
@@ -605,7 +617,11 @@ def interpolate_simple(start: dict, end: dict,
 
     if "generate_earth_file" in kwargs and kwargs["generate_earth_file"]:
         print("Exporting data...")
-        export_geoposition_data(cams, n, metric, kwargs["file_path"])  # [np.array(cam["position"]) for cam in cams])
+        earth = kwargs["move_around_object"]
+        earth_position = earth.location
+        earth_radius = (earth.matrix_world@(earth.data.vertices[0].co-earth.location)).length
+        export_geoposition_data(cams, n, metric, kwargs["file_path"], earth_center=earth_position,
+                                earth_radius=earth_radius)  # [np.array(cam["position"]) for cam in cams])
         print("Exporting finished")
     return cams
 
@@ -767,7 +783,8 @@ def disambiguate_spline(control_points: list, knots: list, spline: list):
 def interpolate_keyframes(control_points: list, knots: list,
                           focal: float, metric: str, method: str,
                           n: int = 101, **kwargs) -> list:
-    if (metric == "3DImageFlow" or metric == "3DImageFlowGeodesic" or metric == "3DImageFlowGeodesicGreedy") and not "rho" in kwargs:
+    if (
+            metric == "3DImageFlow" or metric == "3DImageFlowGeodesic" or metric == "3DImageFlowGeodesicGreedy") and not "rho" in kwargs:
         kwargs["rho"] = np.sqrt(2)
         print("No named argument rho given for metric 3DImageFlow. Using default parameter sqrt(2).")
 
