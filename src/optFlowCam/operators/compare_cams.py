@@ -219,11 +219,11 @@ def get_look_at_points(cams):
     # return [Vector(cam["position"]) + cam["frustum_scale"] * cam["focal"] * Vector(cam["view"]) for cam in cams]
 
 
-def create_spheres_at(positions, collection_name):
+def create_spheres_at(positions, collection_name, size=Vector((1,1,1))):
     spheres = []
     for position in positions:
         bpy.ops.mesh.primitive_uv_sphere_add(radius=.2, enter_editmode=False, align='WORLD', location=position,
-                                             scale=(1, 1, 1))
+                                             scale=size)
         sphere_obj = bpy.context.active_object
         spheres.append(sphere_obj)
         if collection_name == bpy.context.scene.collection.name:
@@ -454,9 +454,9 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
 
         if render_animation:
             start_pos, end_pos = get_look_at_points([start_cam, end_cam])
-            start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name)
+            start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name,Vector((0.75,0.75,0.75)))
             start_cam_sphere, end_cam_sphere = create_spheres_at([start_cam["position"], end_cam["position"]],
-                                                                 random_coll_name)
+                                                                 random_coll_name, Vector((0.6,0.6,0.6)))
             # copy state before
             mat_copy = move_around_object.data.materials[:]
             # make object
@@ -483,6 +483,8 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             bpy.data.objects.remove(start_sphere)
             bpy.data.objects.remove(cam)
             bpy.data.objects.remove(end_sphere)
+            bpy.data.objects.remove(end_cam_sphere)
+            bpy.data.objects.remove(start_cam_sphere)
 
             combine_clips(filenames, image_path, exporting_path)
 

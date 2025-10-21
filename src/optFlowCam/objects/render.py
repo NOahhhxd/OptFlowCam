@@ -59,11 +59,10 @@ def add_image(filepath, num, scene, end):
         filepath=filepath,
         channel=num,
         frame_start=0,
-        frame_end=end
     )
     """
-    img.transform.scale_x = 0.5
-    img.transform.scale_y = 0.5
+    img.transform.scale_x = 0
+    img.transform.scale_y = 0
     for i in range(offset, end + 1):
         img.transform.keyframe_insert("scale_x", frame=i)
         img.transform.keyframe_insert("scale_y", frame=i)
@@ -103,12 +102,3 @@ def combine_clips(file_paths, overview_path, path):
     bpy.ops.render.render(animation=True)
     with open(f"{path}\\solution.txt", "w+") as f:
         f.write("\n".join([f"{idx + 1}{clip}" for idx, clip in enumerate(file_paths)]))
-
-
-"""
-video1 = "C:\\Users\\nonoa\\Downloads\\tests\\tests\\Hase\\Test1\\TransformationsLinear.mp4"
-video2 = "C:\\Users\\nonoa\\Downloads\\tests\\tests\\Hase\\Test1\\3DImageFlowGeodesic.mp4"
-video3 = "C:\\Users\\nonoa\\Downloads\\tests\\tests\\Hase\\Test1\\3DImageFlow.mp4"
-image1 = "C:\\Users\\nonoa\\Downloads\\tests\\tests\\Hase\\Test1\\overview.png"
-combine_clips([video1, video2, video3], image1, "C:\\Users\\nonoa\\Downloads\\tests\\tests\\Hase\\Test1")
-"""
