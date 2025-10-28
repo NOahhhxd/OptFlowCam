@@ -141,10 +141,17 @@ def random_pos_squared2(vertex_co, vertex_normal, matrix, r):
     cam_pos = matrix @ vertex_co + rotation_vec
     return cam_pos, -rotation_vec
 
+def get_up(view):
+    return view.cross([0, 0, 1]).cross(view)
 
-def create_cams(object_mesh, matrix, min_scale, max_scale):
+def create_cams(object_mesh, matrix, min_scale, max_scale, is_earth_cam=False):
     scale_base = get_shortest_bb_diagonal(object_mesh.bound_box, object_mesh.matrix_world) / 2
-    focal = 1.3888888888888888
+    if is_earth_cam:
+        # 20° FOV = Google Earth standard-FOV => = 102.083 mm focal length / 36.0 mm sensor width
+        focal = 2.8356410132514105
+    else:
+        # 39.6° = standard FOV => 50.0 mm focal length / 36.0 mm sensor width
+        focal = 1.3888888888888888
     vertices = object_mesh.data.vertices
     faces = object_mesh.data.polygons
     face_idx = list(range(len(faces)))
@@ -267,7 +274,7 @@ def create_outside_cam(start_pos, end_pos, obj, collection_name):
     else:
         up_vec = Vector([0, -cam_direction[2], cam_direction[1]]).normalized()
     """
-    # solange es auf den Mittelpunkt des direktden Pfads gerichtet ist, kann up-Vector einfach nach oben gerictet sein
+    # solange es auf den Mittelpunkt auf gleich Höhe gerichtet ist, kann up-Vector einfach nach oben gerichtet sein
     up_vec = Vector([0, 0, 1])
     cam = create_cam(cam_position, cam_direction, up_vec, 1, 1.3888888888888888)
     cam_obj = add_camera_object(collection_name, "singleShot")
@@ -276,6 +283,9 @@ def create_outside_cam(start_pos, end_pos, obj, collection_name):
 
 
 class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
+    """
+    Operator to compare different metrics for interpolating cameras.
+    """
     # custom ID
     bl_idname = "ofc.compare_interpolate_camera"
     bl_label = "Compare Interpolate Optimal Camera"
@@ -366,7 +376,9 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         paths = []
         for metric in metrics:
             cam = add_camera_object(random_coll_name, camera_name=f"compare_cam_{metric}")
-            # random_cam_name = cam.name
+            if generate_earth_file:
+                # FOV = 20°
+                cam.data.lens = 102.083 # focal length in mm
             cams.append(cam)
             random_cam_path = f"compare_path_{metric}"
             path = add_path_object(2, random_coll_name, random_cam_path)
@@ -395,7 +407,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         knots = None
 
         if random_cams:
-            start_cam, end_cam = create_cams(move_around_object, move_around_object.matrix_world, min_scale, max_scale)
+            start_cam, end_cam = create_cams(move_around_object, move_around_object.matrix_world, min_scale, max_scale, is_earth_cam=generate_earth_file)
             n_frames = props.n_frames
             knots = [0, n_frames - 1]
         else:
@@ -407,7 +419,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             frame_start = keyframes[0].frame
             frame_end = keyframes[-1].frame
 
-            n_frames = (frame_end - frame_start) + 1
+            n_frames = (frame_end - frame_start)+1
 
             start_cam, end_cam = [cam_to_sample(k.cam) for k in keyframes]
             knots = [k.frame for k in keyframes]

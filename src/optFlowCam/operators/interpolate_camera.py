@@ -99,6 +99,8 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
         n_frames = (frame_end - frame_start) + 1
         curr_frame = context.scene.frame_current
 
+        min_greedy_point_difference = props.min_greedy_point_difference
+
         if (not event.type in {'RET', 'SPACE'} or
                 (event.type in {'RET', 'SPACE'} and not event.shift)):
 
@@ -124,7 +126,8 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
         try:
             self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
                                                props.metric, props.method, n_frames,
-                                               rho=props.rho)
+                                               rho=props.rho,
+                                               min_greedy_point_difference=min_greedy_point_difference)
         except Exception as e:
             print(e)
             traceback.print_exc()

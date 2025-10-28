@@ -16,8 +16,10 @@ class OFC_OT_CreateEarthCam(bpy.types.Operator):
         earth = bpy.context.selected_objects[0]
         earth_radius = (earth.matrix_world @ (earth.data.vertices[0].co - earth.location)).length
         matrix = camMatrixByPosition(earth_cam_props.latitude, earth_cam_props.longitude, earth_cam_props.altitude,
-                                     earth_cam_props.rotX, earth_cam_props.rotY, earth_cam_props.rotX, earth_radius)
+                                     earth_cam_props.rotX, earth_cam_props.rotY, earth_cam_props.rotZ, earth_radius)
         cam_obj.matrix_world = matrix
+        # for a fov of 20° like in Google Earth Studio
+        cam_obj.data.lens = 102.08307647705078
         return {'FINISHED'}
 
 

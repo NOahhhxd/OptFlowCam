@@ -1,7 +1,7 @@
 import math, json, numpy as np
 from ..math import make_lookAt_matrix
 from mathutils import Vector, Matrix
-from math import sin,cos,atan2,acos,asin
+from math import sin, cos, atan2, acos, asin
 
 template = """{
   "modelVersion": 18,
@@ -241,8 +241,7 @@ template = """{
 }"""
 
 
-def get_height(position, center, radius):
-    distance = (position - center).length
+def get_height(distance, radius):
     """
     radius/distance = 6371_000 / real_distance
     ======>
@@ -298,63 +297,6 @@ def extract_2d_position(position, earth_center, earth_radius):
 
 def project_point_into_ebene(point, vec, normal):
     return point + (normal @ (vec - point)) * normal
-
-
-def theiselsIdee(pos, dir, earth_center, earth_radius):
-    """
-    1. Schnittpunkt der Sichtachse auf der Erde finden
-    hh := Multiply( Transpose(E+t*A),E+t*A)-r^2;
-
-    #solve(hh=0,t);
-
-    dd :=
-    -Multiply( Transpose(A),E)
-    + sqrt(
-    + r^2*Multiply( Transpose(A),A)
-    -Multiply( Transpose(A&xE),A&xE)
-    );
-    simplify(eval(hh,t=dd));
-
-    M := simplify(E+dd*A);
-
-    2. Spiegel Matrix aufstellen
-    MM_mirror := Matrix([
-    [-1,0,0],
-    [0,1,0],
-    [0,0,-1]]);
-
-###
-    3. Skalierung berechnen
-    s_pio := -dd/f;
-    M_pio := M;
-    RM_pio := Multiply( RM, MM_mirror);
-
-###
-
-A_pio := Vector([ RM_pio[1,3],RM_pio[2,3],RM_pio[3,3] ]);
-E_pio := M_pio - f*s_pio*A_pio;
-
-Longitude_pio := simplify(arctan( E_pio[2],E_pio[1]));
-Latitude_pio  := arctan( E_pio[3] , E_pio[1]/cos(Longitude_pio) );
-Altitude_pio := sqrt(Multiply( Transpose(E_pio),E_pio)) - r;
-
-RMO_pio := Matrix(3, 3, [
-[-sin(Longitude_pio), -sin(Latitude_pio)*cos(Longitude_pio), cos(Longitude_pio)*cos(Latitude_pio)],
-[cos(Longitude_pio), -sin(Latitude_pio)*sin(Longitude_pio), sin(Longitude_pio)*cos(Latitude_pio)],
-[0, cos(Latitude_pio), sin(Latitude_pio)]]);
-
-
-RM1_pio := Multiply( Transpose(RMO_pio) , Multiply( RM_pio, MM_mirror));
-== Weltmatrix ???
-
-#Tilt_pio := arccos(RM1_pio[3,3]);
-Tilt_pio := arctan( sqrt(RM1_pio[1,3]^2 + RM1_pio[2,3]^2) , RM1_pio[3,3] );
-Roll_pio := arctan( -RM1[3,1],RM1[3,2]);
-Pan_pio := arctan(-RM1[1,3],-RM1[2,3]);
-
-
-    """
-
 
 def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
     from math import sin, cos, radians
@@ -444,12 +386,12 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
     RM1 = ((RM_Pan @ RM_Tilt) @ RM_Roll)
     #
     RM = (RM0 @ RM1)
-    #print(np.cross(RM[:, 1], RM[:, 2]))
+    # print(np.cross(RM[:, 1], RM[:, 2]))
     up = Vector(RM[:, 1])
     forward = -Vector(RM[:, 2])
-    #print(RM)
+    # print(RM)
     # return RM_pio, E
-    return make_lookAt_matrix(E, forward, up)# , E, forward, up
+    return make_lookAt_matrix(E, forward, up)  # , E, forward, up
     # mat,pos = camMatrixByPosition(0,45,20,20,11,23,2,2)
     # mat= camMatrixByPosition(0,0,20,180,15,180,2,2)
 
@@ -467,16 +409,10 @@ def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
             "focal": focal
         }
         """
-    # forward = -forward
-    # forward = -np.array(cam["view"])
     forward = -np.array(cam["view"])
     up = np.array(cam["up"])
     pos = np.array(cam["position"]) - earth_position
-    # RIGHT = np.cross(up, forward)
-    #
-    # np.array([np.cross(RM[:, 1], RM[:, 2]), RM[:, 1], RM[:, 2]]).T
     RM = np.array([np.cross(up, forward), up, forward]).T
-    print(RM)
     E_pio = pos
     """
     Longitude_pio := simplify(arctan( E_pio[2],E_pio[1]));
@@ -488,18 +424,16 @@ def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
     [cos(Longitude_pio), -sin(Latitude_pio)*sin(Longitude_pio), sin(Longitude_pio)*cos(Latitude_pio)], 
     [0, cos(Latitude_pio), sin(Latitude_pio)]]);
     
-    
     RM1_pio := Multiply( Transpose(RMO_pio) , Multiply( RM_pio, MM_mirror));
     
-    
-    #Tilt_pio := arccos(RM1_pio[3,3]);
     Tilt_pio := arctan( sqrt(RM1_pio[1,3]^2 + RM1_pio[2,3]^2) , RM1_pio[3,3] );
     Roll_pio := arctan( -RM1[3,1],RM1[3,2]);
     Pan_pio := arctan(-RM1[1,3],-RM1[2,3]);
     """
     longitude = math.atan2(E_pio[1], E_pio[0])
     latitude = math.atan2(E_pio[2], E_pio[0] / cos(longitude))
-    altitude = Vector(E_pio).length - earth_radius  # for resulting file ist must be scaled to earth scale
+    altitude = Vector(E_pio).length  # - earth_radius  # for resulting file ist must be scaled to earth scale
+    altitude = get_height(altitude, earth_radius)
     RMO_pio = np.array([
         [-sin(longitude), -sin(latitude) * cos(longitude), cos(longitude) * cos(latitude)],
         [cos(longitude), -sin(latitude) * sin(longitude), sin(longitude) * cos(latitude)],
@@ -508,10 +442,12 @@ def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
     RM1_pio = RMO_pio.T @ RM
     # RM = (RM0 @ RM1)
     # => RM1 = RM0 ^ -1 @ RM = RM0^T @ RM
-    Tilt_pio = math.atan2(math.sqrt(RM1_pio[0, 2] ** 2 + RM1_pio[1, 2] ** 2), RM1_pio[2, 2])
+    Tilt_pio = ((math.atan2(math.sqrt(RM1_pio[0, 2] ** 2 + RM1_pio[1, 2] ** 2), RM1_pio[2, 2]) + 2 * math.pi)
+                % (2 * math.pi))
     Roll_pio = math.atan2(-RM1_pio[2, 0], RM1_pio[2, 1])
-    Pan_pio = math.atan2(-RM1_pio[0, 2], -RM1_pio[1, 2])
-    return Pan_pio, Tilt_pio, Roll_pio
+    Pan_pio = (math.atan2(-RM1_pio[0, 2], -RM1_pio[1, 2]) + 2 * math.pi) % (2 * math.pi)
+    return longitude, latitude, altitude, Pan_pio, Tilt_pio, Roll_pio
+    # math.degrees(longitude), math.degrees(latitude), altitude, math.degrees(Pan_pio), math.degrees(Tilt_pio), math.degrees(Roll_pio)
 
 
 def extract_data_from_cam(cam, earth_center, earth_radius):
@@ -525,8 +461,8 @@ def extract_data_from_cam(cam, earth_center, earth_radius):
     }
     """
     position = Vector(cam["position"])
-    long, lat, height = extract_2d_position(position, earth_center, earth_radius)
-    rotX, rotY, rotZ = extract_rotation(cam, earth_center, earth_radius)
+    # long, lat, height = extract_2d_position(position, earth_center, earth_radius)
+    long, lat, height, rotX, rotY, rotZ = extract_rotation(cam, earth_center, earth_radius)
     return long, lat, height, rotX, rotY, rotZ
 
 
@@ -535,7 +471,7 @@ def get_relative_value(value, min_value, max_value):
 
 
 class GoogleEarthStudio:
-    def __init__(self, frames=100, name="GoogleEarth", frame_rate=24, earth_center=Vector([0, 0, 0]), earth_radius=10):
+    def __init__(self, frames=100, name="GoogleEarth", frame_rate=30, earth_center=Vector([0, 0, 0]), earth_radius=10):
         self.frames = frames
         self.name = name
         self.frame_rate = frame_rate
@@ -550,7 +486,7 @@ class GoogleEarthStudio:
 
     def createAnimation(self, path):
         json_data = json.loads(
-            template.replace("{frames}", str(self.frames-1)).replace("{frame_rate}", str(self.frame_rate)).replace(
+            template.replace("{frames}", str(self.frames - 1)).replace("{frame_rate}", str(self.frame_rate)).replace(
                 "{name}", self.name))
         positions = json_data["scenes"][0]["attributes"][0]["attributes"][0]["attributes"][0]["attributes"]
         rotations = json_data["scenes"][0]["attributes"][0]["attributes"][2]["attributes"]
@@ -561,17 +497,24 @@ class GoogleEarthStudio:
         rotations[0]["keyframes"] = self.rotationsX
         rotations[1]["keyframes"] = self.rotationsY
         rotations[2]["keyframes"] = self.rotationsZ
+        print(f"#inserted frames of metric {self.name}: {len(self.rotationsX)}")
 
         with open(path, "w", encoding='utf-8') as f:
             json.dump(json_data, f, ensure_ascii=False)
 
     def append_frame(self, cam, frame):
         long, lat, dist, rotX, rotY, rotZ = extract_data_from_cam(cam, self.earth_center, self.earth_radius)
-        time = frame / self.frames
-        self.longitudes.append({"time": time, "value": get_relative_value(long, -180, 180)})  # -180 bis +180
-        self.latitudes.append({"time": time, "value": get_relative_value(lat, -90, 90)})  # -90 bis +90
+        time = frame/(self.frames-1) # time = np.linspace(0, 1, self.frames)[frame]
+        # self.longitudes.append({"time": time, "value": get_relative_value(long, -180, 180)})  # -180 bis +180
+        self.longitudes.append({"time": time, "value": get_relative_value(long, -math.pi,
+                                                                          math.pi)})  # -180, 179)}) # -math.pi, math.pi)})  # -180 bis +180
+        # self.latitudes.append({"time": time, "value": get_relative_value(lat, -90, 90)})  # -90 bis +90
+        self.latitudes.append(
+            {"time": time, "value": get_relative_value(lat, -math.pi / 2, math.pi / 2)})  # -90,89)}) #   # -90 bis +90
         self.distances.append({"time": time, "value": get_relative_value(dist, -500, 65117481)})  # -500 bis 65117481
-        self.rotationsX.append({"time": time, "value": get_relative_value(rotX, 0,
-                                                                          2 * math.pi)})  # ??? -359,9° bis -359,9° ?? vlt auch nur 0-359,9°
-        self.rotationsY.append({"time": time, "value": get_relative_value(rotY, 0, math.pi)})  # 0° bis 180° || 0 - PI
-        self.rotationsZ.append({"time": time, "value": get_relative_value(rotZ, 0, 2*math.pi)})  # 0° bis 180° || 0 - PI
+        self.rotationsX.append(
+            {"time": time, "value": get_relative_value(rotX, 0, 2 * math.pi)})  # 0, 359)}) #  # ??? 0 - 360°
+        self.rotationsY.append(
+            {"time": time, "value": get_relative_value(rotY, 0, math.pi)})  # 0,179)}) #   # 0° bis 180° || 0 - PI
+        self.rotationsZ.append(
+            {"time": time, "value": get_relative_value(rotZ, 0, 2 * math.pi)})  # 0,359)}) #   # 0° bis 360°

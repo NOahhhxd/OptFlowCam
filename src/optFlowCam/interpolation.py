@@ -22,7 +22,7 @@ from .objects.GoogleEarthFile import GoogleEarthStudio
 def export_geoposition_data(cams, num_frames, metric, file_path, earth_center=Vector((0, 0, 0)), earth_radius=10):
     if num_frames != len(cams):
         num_frames = len(cams)
-    studio = GoogleEarthStudio(num_frames, metric, 24, earth_center, earth_radius)
+    studio = GoogleEarthStudio(num_frames, metric, 30, earth_center, earth_radius)
     for idx, cam in enumerate(cams):
         studio.append_frame(cam, idx)
 
@@ -71,12 +71,13 @@ def shortest_path_of(path, min_distance=2):
         if not longest_line:
             return path
         else:
-            del path[longest_line[0] + 1:longest_line[1]]
+            del path[longest_line[0] + 1:longest_line[1]]       
         if len(path) < 3:
             return path
 
 
 def lift_up(path, obj, factor=0.00001):
+
     result = []
     mat_inv = obj.matrix_world.inverted()
     mat = obj.matrix_world
@@ -88,6 +89,9 @@ def lift_up(path, obj, factor=0.00001):
 
 class InterpolateGeodesic:
     def __init__(self, start_cam, end_cam, focal, greedy_method=False, min_greedy_point_difference=2):
+        """
+        Initialized attributes and calculates the geodesic between start and end cam
+        """
         start_eyepoint = start_cam["position"]
         start_view_direction = start_cam["view"]
         end_eyepoint = end_cam["position"]
@@ -107,56 +111,44 @@ class InterpolateGeodesic:
         if obj and obj == obj2 and obj.type == "MESH":
             self.mesh = obj.evaluated_get(vl.depsgraph).to_mesh()
             self.obj = obj
-            # [(bpy.data.objects['Sphere'].matrix_world @ i.co) for i in bpy.data.objects['Sphere'].data.vertices]
         else:
             raise ValueError("Start-/Endkamera müssen auf dasselbe Objekt gerichtet sein")
         self.distance = None
         self.path = []
-        faces = [i.vertices for i in self.mesh.polygons]
-        start_face = faces.pop(start_face_idx)
-        end_face = faces.pop(end_face_idx)
-        faces += new_face(start_face, len(self.mesh.vertices))
-        faces += new_face(end_face, len(self.mesh.vertices) + 1)
-        self.geodesic_calc = geodesic.PyGeodesicAlgorithmExact(
-            [self.obj.matrix_world @ i.co for i in self.mesh.vertices] + [start_loc, end_loc], faces)
-        # [i for i in bpy.data.meshes["Icosphere"].polygons[0].vertices] )# self.mesh.polygons)
-        self.calculate(start_cam, end_cam, 0, 1, len(self.mesh.vertices), focal)
+        if start_face_idx == end_face_idx:
+            self.path = [(start_loc, 0), (end_loc, 1)]
+            self.distance = (start_loc - end_loc).length
+        else:
+            faces = [i.vertices for i in self.mesh.polygons if i.index != start_face_idx and i.index != end_face_idx]
 
-    def calculate(self, start, end, start_t, end_t, idx, focal):
+            start_face = self.mesh.polygons[start_face_idx].vertices  # faces.pop(start_face_idx)
+            end_face = self.mesh.polygons[end_face_idx].vertices  # faces.pop(end_face_idx)
+            faces += new_face(start_face, len(self.mesh.vertices))
+            faces += new_face(end_face, len(self.mesh.vertices) + 1)
+            self.geodesic_calc = geodesic.PyGeodesicAlgorithmExact(
+                [self.obj.matrix_world @ i.co for i in self.mesh.vertices] + [start_loc, end_loc], faces)
+            # [i for i in bpy.data.meshes["Icosphere"].polygons[0].vertices] )# self.mesh.polygons)
+            self.calculate(0, 1, len(self.mesh.vertices))
+
+    def calculate(self, start_t, end_t, idx):
         """
-        cam = {
-        "position": pos.tolist(),
-        "view": view.tolist(),
-        "up": up.tolist(),
-        "frustum_scale": scale,
-        "focal": focal
-        }
+        Calculate the geodesic path between start and end and combine path with time.
         """
         assert start_t < end_t
-        """
-        start_eyepoint = start["position"]
-        start_view_direction = start["view"]
-        end_eyepoint = end["position"]
-        end_view_direction = end["view"]
-        _, start_face_idx, start_loc = self.raycast(start_eyepoint, start_view_direction)
-        start_idx = self.get_idx(start_face_idx, start_loc)
-        _, end_face_idx, end_loc = self.raycast(end_eyepoint, end_view_direction)
-        end_idx = self.get_idx(end_face_idx, end_loc)
-        path = self.find_geodesic_path_between(start_idx, end_idx)
-        """
-        ### Idee: Pfad durch BSpline der Punkte interpolieren lassen
+
         path = self.find_geodesic_path_between(idx, idx + 1)
-        print(f"Länge des {'modifizierten' if self.greedy_geodesic else ''} Pfads: {len(path)}")
+        print(f"Length of {'modified' if self.greedy_geodesic else ''} path: {len(path)}")
         self.mix_path_with_time(path, start_t, end_t)
-        # self.mix_advanced_path_with_time(path, start, start_t, end, end_t, focal)
 
     def get_distance(self):
         return self.distance
 
     def interpolate(self, t):
-        print(t)
-        # assert self.path[0][1] <= t <= self.path[-1][1] , f"{t} is not in {self.path[0][1]} - {self.path[-1][1]}"
-        idx = self.find_t_idx(t)  #
+        """
+        Interpolates a point of the geodesic path by t (0 <= t <= 1)
+        """
+        # structure of self.path[i] = (coordinates, time)
+        idx = self.find_t_idx(t)
         idx = min(max(0, idx), len(self.path) - 1)
         next_element = self.path[idx]
         next_t = next_element[1]
@@ -168,7 +160,6 @@ class InterpolateGeodesic:
             return (1 - t_part) * last_element[0] + t_part * next_element[0]
         else:
             return next_element[0]
-        # return last_element[0] + (next_element[1]-last_element[0])*((t-last_t) / t_diff)
 
     def raycast(self, start, direction) -> tuple[Any, Any, Any]:
         context = bpy.context
@@ -179,18 +170,8 @@ class InterpolateGeodesic:
         assert hit, "Cameras must be pointed at an object"
         return obj_0, face_idx, loc
 
-    def get_idx(self, face_idx, loc):
-        faces = self.mesh.polygons[face_idx]
-        nearest_vert = None
-        for v in faces.vertices:
-            vert = self.mesh.vertices[v]
-            if not nearest_vert or nearest_vert[0] > (vert.co - loc).length:
-                nearest_vert = ((vert.co - loc).length, vert)
-        return nearest_vert[1].index
-
     def find_geodesic_path_between(self, start_idx, end_idx):
         distance, path = self.geodesic_calc.geodesicDistance(end_idx, start_idx)
-        # self.distance = distance
         print("From", start_idx)
         print("to", end_idx)
         print("Distance", distance)
@@ -204,7 +185,6 @@ class InterpolateGeodesic:
                 distance += np.linalg.norm(path[i] - path[i - 1])
 
         self.distance = distance
-        # print(path)
         return path
 
     def mix_path_with_time(self, path, start_t, end_t):
@@ -214,33 +194,11 @@ class InterpolateGeodesic:
             current_dist = np.linalg.norm(path[idx] - path[idx - 1])
             self.path.append((path[idx], self.path[idx - 1][1] + t_diff * current_dist / self.distance))
         self.path.append((path[-1], end_t))
-        # print(self.path)
-        # self.path = list(zip(path, np.linspace(start_t, end_t, len(path))))
 
     def find_t_idx(self, t):
         return bisect.bisect_left(self.path, t, key=lambda x: x[1])
 
-    def mix_advanced_path_with_time(self, path, start, start_t, end, end_t, focal):
-        # look1 = pos1 + s1 * focal * view1
-        pos1, view1, up1, right1, s1 = unpack_camera(start)
-        look1 = pos1 + s1 * focal * view1
-        start_diff = np.linalg.norm(path[0] - look1)
-        pos2, view2, up2, right2, s2 = unpack_camera(end)
-        look2 = pos2 + s2 * focal * view2
-        end_diff = np.linalg.norm(path[-1] - look2)
-
-        self.distance = self.distance + start_diff + end_diff
-        start_part = start_diff / self.distance
-        end_part = end_diff / self.distance
-        t_after_start_part = start_t + (end_t - start_t) * start_part
-        t_before_end_part = end_t - (end_t - start_t) * end_part
-        self.path = list(zip(np.vstack((look1, path, look2)),
-                             [start_t] + list(np.linspace(t_after_start_part, t_before_end_part, len(path))) + [end_t]))
-        # print(self.path)
-
     def update_path_object(self, path_object):
-        # from ..objects.path_geometry import add_path_object, update_path
-        # path_object = add_path_object(2, collection_name, "geodesic_path")
         update_path(path_object, [{"position": i[0]} for i in self.path])
 
 
@@ -619,7 +577,7 @@ def interpolate_simple(start: dict, end: dict,
         print("Exporting data...")
         earth = kwargs["move_around_object"]
         earth_position = earth.location
-        earth_radius = (earth.matrix_world@(earth.data.vertices[0].co-earth.location)).length
+        earth_radius = (earth.matrix_world @ (earth.data.vertices[0].co - earth.location)).length
         export_geoposition_data(cams, n, metric, kwargs["file_path"], earth_center=earth_position,
                                 earth_radius=earth_radius)  # [np.array(cam["position"]) for cam in cams])
         print("Exporting finished")

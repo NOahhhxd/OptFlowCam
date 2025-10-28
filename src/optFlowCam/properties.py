@@ -147,12 +147,12 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
 
 # ------------------------------------------------------------------------------
 class OFC_PG_GoogleEarthCamProperties(bpy.types.PropertyGroup):
-    longitude: bpy.props.FloatProperty(name="longitude", description="What is the cameras longitude in degrees?")
-    latitude: bpy.props.FloatProperty(name="latitude", description="What is the cameras latitude in degrees?")
-    altitude: bpy.props.FloatProperty(name="altitude", description="What is the cameras altitude in meters?")
-    rotX: bpy.props.FloatProperty(name="rotX", description="What is the cameras rotationX in degrees?")
-    rotY: bpy.props.FloatProperty(name="rotY", description="What is the cameras rotationY in degrees?")
-    rotZ: bpy.props.FloatProperty(name="rotZ", description="What is the cameras rotationZ in degrees?")
+    longitude: bpy.props.FloatProperty(name="Longitude", description="What is the cameras longitude in degrees?")
+    latitude: bpy.props.FloatProperty(name="Latitude", description="What is the cameras latitude in degrees?")
+    altitude: bpy.props.FloatProperty(name="Altitude", description="What is the cameras altitude in meters?")
+    rotX: bpy.props.FloatProperty(name="Pan", description="What is the cameras pan in degrees?")
+    rotY: bpy.props.FloatProperty(name="Tilt", description="What is the cameras tilt in degrees?")
+    rotZ: bpy.props.FloatProperty(name="Roll", description="What is the cameras roll in degrees?")
 
 
 class OFC_PG_OptimalPathOperatorProperties(bpy.types.PropertyGroup):
