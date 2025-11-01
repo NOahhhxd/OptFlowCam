@@ -147,8 +147,8 @@ def get_up(view):
 def create_cams(object_mesh, matrix, min_scale, max_scale, is_earth_cam=False):
     scale_base = get_shortest_bb_diagonal(object_mesh.bound_box, object_mesh.matrix_world) / 2
     if is_earth_cam:
-        # 20° FOV = Google Earth standard-FOV => = 102.083 mm focal length / 36.0 mm sensor width
-        focal = 2.8356410132514105
+        # 20° FOV of google earth
+        focal = 1.639344262295082
     else:
         # 39.6° = standard FOV => 50.0 mm focal length / 36.0 mm sensor width
         focal = 1.3888888888888888
@@ -378,7 +378,8 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             cam = add_camera_object(random_coll_name, camera_name=f"compare_cam_{metric}")
             if generate_earth_file:
                 # FOV = 20°
-                cam.data.lens = 102.083 # focal length in mm
+                f = 1.639344262295082
+                cam.data.lens = f * cam.data.sensor_width
             cams.append(cam)
             random_cam_path = f"compare_path_{metric}"
             path = add_path_object(2, random_coll_name, random_cam_path)

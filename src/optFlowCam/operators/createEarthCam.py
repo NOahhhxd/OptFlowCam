@@ -2,6 +2,7 @@ import bpy
 
 from ..objects.GoogleEarthFile import camMatrixByPosition
 from ..objects.camera import add_camera_object
+from mathutils import Vector
 
 
 class OFC_OT_CreateEarthCam(bpy.types.Operator):
@@ -15,11 +16,16 @@ class OFC_OT_CreateEarthCam(bpy.types.Operator):
         cam_obj = add_camera_object(bpy.context.scene.collection.name, "GoogleEarthCam")
         earth = bpy.context.selected_objects[0]
         earth_radius = (earth.matrix_world @ (earth.data.vertices[0].co - earth.location)).length
-        matrix = camMatrixByPosition(earth_cam_props.latitude, earth_cam_props.longitude, earth_cam_props.altitude,
+        matrix, distance = camMatrixByPosition(earth_cam_props.latitude, earth_cam_props.longitude, earth_cam_props.altitude,
                                      earth_cam_props.rotX, earth_cam_props.rotY, earth_cam_props.rotZ, earth_radius)
-        cam_obj.matrix_world = matrix
+
         # for a fov of 20° like in Google Earth Studio
-        cam_obj.data.lens = 102.08307647705078
+        f = 1.639344262295082
+        scale = -distance/f
+
+        cam_obj.data.lens = f * cam_obj.data.sensor_width
+        cam_obj.matrix_world = matrix
+        cam_obj.scale = scale * Vector((1, 1, 1))
         return {'FINISHED'}
 
 
