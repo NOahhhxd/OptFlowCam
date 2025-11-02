@@ -1,3 +1,5 @@
+from enum import global_str
+
 import bpy
 from mathutils import Vector
 import traceback
@@ -141,8 +143,10 @@ def random_pos_squared2(vertex_co, vertex_normal, matrix, r):
     cam_pos = matrix @ vertex_co + rotation_vec
     return cam_pos, -rotation_vec
 
+
 def get_up(view):
     return view.cross([0, 0, 1]).cross(view)
+
 
 def create_cams(object_mesh, matrix, min_scale, max_scale, is_earth_cam=False):
     scale_base = get_shortest_bb_diagonal(object_mesh.bound_box, object_mesh.matrix_world) / 2
@@ -226,7 +230,7 @@ def get_look_at_points(cams):
     # return [Vector(cam["position"]) + cam["frustum_scale"] * cam["focal"] * Vector(cam["view"]) for cam in cams]
 
 
-def create_spheres_at(positions, collection_name, size=Vector((1,1,1))):
+def create_spheres_at(positions, collection_name, size=Vector((1, 1, 1))):
     spheres = []
     for position in positions:
         bpy.ops.mesh.primitive_uv_sphere_add(radius=.2, enter_editmode=False, align='WORLD', location=position,
@@ -290,26 +294,6 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
     bl_idname = "ofc.compare_interpolate_camera"
     bl_label = "Compare Interpolate Optimal Camera"
     bl_options = {'INTERNAL'}
-
-    temp_collection: bpy.props.StringProperty(
-        default='OFC_Temp_AnimatedCameraCollection',
-        options={'HIDDEN'}
-    )
-
-    cam: bpy.props.StringProperty(
-        default='OFC_Temp_AnimatedCamera',
-        options={'HIDDEN'}
-    )
-
-    cam_path: bpy.props.StringProperty(
-        default='OFC_Temp_CameraPath',
-        options={'HIDDEN'}
-    )
-
-    lookat_path: bpy.props.StringProperty(
-        default='OFC_Temp_LookAtPath',
-        options={'HIDDEN'}
-    )
 
     _timer = None
     _path = None
@@ -378,14 +362,14 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             cam = add_camera_object(random_coll_name, camera_name=f"compare_cam_{metric}")
             if generate_earth_file:
                 # FOV = 20°
-                cam.data.lens = 102.083 # focal length in mm
+                cam.data.lens = 102.083  # focal length in mm
             cams.append(cam)
             random_cam_path = f"compare_path_{metric}"
             path = add_path_object(2, random_coll_name, random_cam_path)
             paths.append(path)
 
-        context = bpy.context
-        vl = context.view_layer
+        global_context = bpy.context
+        vl = global_context.view_layer
 
         # add cams to scene
         if move_around_object.type != 'MESH':
@@ -407,7 +391,8 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
         knots = None
 
         if random_cams:
-            start_cam, end_cam = create_cams(move_around_object, move_around_object.matrix_world, min_scale, max_scale, is_earth_cam=generate_earth_file)
+            start_cam, end_cam = create_cams(move_around_object, move_around_object.matrix_world, min_scale, max_scale,
+                                             is_earth_cam=generate_earth_file)
             n_frames = props.n_frames
             knots = [0, n_frames - 1]
         else:
@@ -419,7 +404,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             frame_start = keyframes[0].frame
             frame_end = keyframes[-1].frame
 
-            n_frames = (frame_end - frame_start)+1
+            n_frames = (frame_end - frame_start) + 1
 
             start_cam, end_cam = [cam_to_sample(k.cam) for k in keyframes]
             knots = [k.frame for k in keyframes]
@@ -460,15 +445,17 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
                 convex_hull_obj.hide_set(True)
                 move_around_object.hide_set(False)
                 """
-                filenames.append(f"{exporting_path}\\{metric}.mp4")
-                render_scene(cams[i], filenames[-1], end_frame=n_frames)
+                filenames.append(f"{exporting_path}\\{metric}MAL.mp4")
+                print("Kamera:", cams[i])
+                render_scene(cams[i], filenames[-1], context, start_frame=knots[0], end_frame=knots[1])
             wm.progress_update(3 + 90 / len(metrics) * (i + 1))
 
         if render_animation:
             start_pos, end_pos = get_look_at_points([start_cam, end_cam])
-            start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name,Vector((0.75,0.75,0.75)))
+            start_sphere, end_sphere = create_spheres_at([start_pos, end_pos], random_coll_name,
+                                                         Vector((0.75, 0.75, 0.75)))
             start_cam_sphere, end_cam_sphere = create_spheres_at([start_cam["position"], end_cam["position"]],
-                                                                 random_coll_name, Vector((0.6,0.6,0.6)))
+                                                                 random_coll_name, Vector((0.6, 0.6, 0.6)))
             # copy state before
             mat_copy = move_around_object.data.materials[:]
             # make object
@@ -483,7 +470,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             cam = create_outside_cam(start_pos, end_pos, move_around_object, random_coll_name)
             # make photo
             image_path = f"{exporting_path}\\overview.png"
-            render_single_image(cam, image_path)
+            render_single_image(cam, image_path, context)
             # undo everything
             move_around_object.data.materials.clear()
             for mat in mat_copy:
@@ -498,12 +485,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
             bpy.data.objects.remove(end_cam_sphere)
             bpy.data.objects.remove(start_cam_sphere)
 
-            combine_clips(filenames, image_path, exporting_path)
-
-        """
-        if len(filenames)>1:
-            combineClips(exporting_path, filenames)
-        """
+            combine_clips(filenames, image_path, exporting_path, context)
 
         wm.progress_end()
         return {'FINISHED'}

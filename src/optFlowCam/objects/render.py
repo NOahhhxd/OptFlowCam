@@ -3,10 +3,14 @@ import random
 import bpy
 
 
-def render_scene(cam, file_path, start_frame=0, end_frame=100):
-    scene = bpy.context.scene
-    scene.sequence_editor_clear()
+def render_scene(cam, file_path, context, start_frame=0, end_frame=100):
+    scene = context.scene
+    #if scene.sequence_editor:
+    #    scene.sequence_editor_clear()
+    scene.render.use_sequencer = False
     scene.camera = cam
+    print("Kamera fuer Video:", scene.camera, scene.name)
+    scene.render.filepath = file_path
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
     scene.render.filepath = file_path
     scene.render.resolution_x = 1920
@@ -15,18 +19,26 @@ def render_scene(cam, file_path, start_frame=0, end_frame=100):
     scene.frame_end = end_frame
     scene.render.image_settings.file_format = 'FFMPEG'
     scene.render.ffmpeg.format = 'MPEG4'
-    bpy.ops.render.render(animation=True)
+    context.view_layer.update()
+    scene.update_tag()
+    scene.update_render_engine()
+    bpy.ops.render.render(animation=True, write_still=False, scene=scene.name)
 
 
-def render_single_image(cam, file_path):
-    scene = bpy.context.scene
+def render_single_image(cam, file_path, context):
+    scene = context.scene
+    scene.render.use_sequencer = False
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
     scene.camera = cam
+    print("Kamera fuer Bild:", scene.camera)
     scene.render.filepath = file_path
     scene.render.resolution_x = 1920
     scene.render.resolution_y = 1080
     scene.render.image_settings.file_format = 'PNG'
-    bpy.ops.render.render(animation=False, write_still=True)
+    context.view_layer.update()
+    scene.update_tag()
+    scene.update_render_engine()
+    bpy.ops.render.render(animation=False, write_still=True, scene=scene.name)
 
 
 def add_video(filepath, start, num, scene):
@@ -74,16 +86,15 @@ def add_image(filepath, num, scene, end):
         img.transform.keyframe_insert("scale_x", frame=i)
         img.transform.keyframe_insert("scale_y", frame=i)
     img.frame_final_duration = end
-    # img.transform.origin[0] = 1
-    # img.transform.origin[1] = 0
 
     return img
 
 
-def combine_clips(file_paths, overview_path, path):
+def combine_clips(file_paths, overview_path, path, context):
     START_OFFSET = 48
     random.shuffle(file_paths)
-    scene = bpy.context.scene
+    scene = context.scene
+    scene.render.use_sequencer = True
     scene.sequence_editor_clear()
     scene.sequence_editor_create()
 
@@ -100,5 +111,6 @@ def combine_clips(file_paths, overview_path, path):
     img = add_image(overview_path, 3, scene, START_OFFSET)
 
     bpy.ops.render.render(animation=True)
+    scene.sequence_editor_clear()
     with open(f"{path}\\solution.txt", "w+") as f:
         f.write("\n".join([f"{idx + 1}{clip}" for idx, clip in enumerate(file_paths)]))
