@@ -298,7 +298,7 @@ def extract_2d_position(position, earth_center, earth_radius):
 def project_point_into_ebene(point, vec, normal):
     return point + (normal @ (vec - point)) * normal
 
-def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
+def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371):
     from math import sin, cos, radians
     lat, long, pan, tilt, roll = [radians(i) for i in [lat, long, pan, tilt, roll]]
     """
@@ -351,7 +351,6 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
                    sin(long) * cos(lat),
                    sin(lat)
                    ])
-
     # radius/distance           = 6371_000 / real_distance
     # earth_radius/scale_factor = 6371_000 / (alt+6371_000)
     # => scale_factor = earth_radius*(alt+6371_000)/6371_000
@@ -389,9 +388,18 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371, focal=2):
     # print(np.cross(RM[:, 1], RM[:, 2]))
     up = Vector(RM[:, 1])
     forward = -Vector(RM[:, 2])
-    # print(RM)
-    # return RM_pio, E
-    return make_lookAt_matrix(E, forward, up)  # , E, forward, up
+    """
+    dd :=
+    -Multiply(Transpose(A), E)
+    + sqrt(
+        + r ^ 2 * Multiply(Transpose(A), A)
+        - Multiply(Transpose(A & xE), A & xE)
+    );
+    """
+    A = RM[:, 2]
+    ae = np.cross(A, E)
+    dd = -np.dot(A,E) + math.sqrt(r**2 * np.dot(A,A) - np.dot(ae,ae))
+    return make_lookAt_matrix(E, forward, up), dd  # , E, forward, up
     # mat,pos = camMatrixByPosition(0,45,20,20,11,23,2,2)
     # mat= camMatrixByPosition(0,0,20,180,15,180,2,2)
 

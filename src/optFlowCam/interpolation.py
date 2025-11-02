@@ -76,8 +76,7 @@ def shortest_path_of(path, min_distance=2):
             return path
 
 
-def lift_up(path, obj, factor=0.00001):
-
+def lift_path(path, obj, factor=0.00001):
     result = []
     mat_inv = obj.matrix_world.inverted()
     mat = obj.matrix_world
@@ -120,14 +119,12 @@ class InterpolateGeodesic:
             self.distance = (start_loc - end_loc).length
         else:
             faces = [i.vertices for i in self.mesh.polygons if i.index != start_face_idx and i.index != end_face_idx]
-
-            start_face = self.mesh.polygons[start_face_idx].vertices  # faces.pop(start_face_idx)
-            end_face = self.mesh.polygons[end_face_idx].vertices  # faces.pop(end_face_idx)
+            start_face = self.mesh.polygons[start_face_idx].vertices
+            end_face = self.mesh.polygons[end_face_idx].vertices
             faces += new_face(start_face, len(self.mesh.vertices))
             faces += new_face(end_face, len(self.mesh.vertices) + 1)
             self.geodesic_calc = geodesic.PyGeodesicAlgorithmExact(
                 [self.obj.matrix_world @ i.co for i in self.mesh.vertices] + [start_loc, end_loc], faces)
-            # [i for i in bpy.data.meshes["Icosphere"].polygons[0].vertices] )# self.mesh.polygons)
             self.calculate(0, 1, len(self.mesh.vertices))
 
     def calculate(self, start_t, end_t, idx):
@@ -176,9 +173,10 @@ class InterpolateGeodesic:
         print("to", end_idx)
         print("Distance", distance)
         if self.greedy_geodesic:
-            path = lift_up(path, self.obj)
+            path = lift_path(path, self.obj, 0.00001)
             print("before modification:", path[0], path[-1])
             path = shortest_path_of(path)
+            path = lift_path(path, self.obj, -0.00001)
             print("after modification:", path[0], path[-1])
             distance = 0
             for i in range(1, len(path)):
