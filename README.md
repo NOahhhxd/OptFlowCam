@@ -84,5 +84,6 @@ The following is a non-exhaustive list of things that could be improved of added
 
 ## :page_with_curl: Citation
 
-This add-on is based on the paper "A 3D-Image-Flow-Based Metric in Camera Space for Camera Paths in Scenes with Extreme Scale Variations" and developed by its author.
+This add-on is based on the following addon: https://github.com/LivelyLiz/OptFlowCam. 
+This other add-on is based on the paper "A 3D-Image-Flow-Based Metric in Camera Space for Camera Paths in Scenes with Extreme Scale Variations" and developed by its author.
 Visit our [project webpage](https://livelyliz.github.io/OptFlowCam/) to find all information about the project and how to cite it.
