@@ -37,7 +37,8 @@ def new_face(face, insert_idx):
 
 
 def shortest_path_of(path, min_distance=2):
-    # better idea (maybe => less intersection calculations)
+    """
+    Greedy modification of the path to remove parts of the curve that does not intersect with the mesh"""
     """
     1. find all lines that have no intersection with the mesh
     2. don't take the ones tha are fully inside another line (but potentially they are also necessary)
@@ -77,6 +78,9 @@ def shortest_path_of(path, min_distance=2):
 
 
 def lift_path(path, obj, factor=0.00001):
+    """
+    Lift the given points by a small factor along the normal
+    """
     result = []
     mat_inv = obj.matrix_world.inverted()
     mat = obj.matrix_world
@@ -87,6 +91,9 @@ def lift_path(path, obj, factor=0.00001):
 
 
 class InterpolateGeodesic:
+    """
+    Class to calculate and interpolate the geodesic between two camera look-at points
+    """
     def __init__(self, start_cam, end_cam, focal, greedy_method=False, min_greedy_point_difference=2):
         """
         Initialized attributes and calculates the geodesic between start and end cam
@@ -103,10 +110,6 @@ class InterpolateGeodesic:
         vl = context.view_layer
         obj, start_face_idx, start_loc = self.raycast(start=start_eyepoint, direction=start_view_direction)
         obj2, end_face_idx, end_loc = self.raycast(start=end_eyepoint, direction=end_view_direction)
-        print("-----Startposition auf dem Mesh----------")
-        print(start_loc)
-        print("-----Endposition auf dem Mesh----------")
-        print(end_loc)
         if obj and obj == obj2 and obj.type == "MESH":
             self.mesh = obj.evaluated_get(vl.depsgraph).to_mesh()
             self.obj = obj
@@ -169,15 +172,9 @@ class InterpolateGeodesic:
 
     def find_geodesic_path_between(self, start_idx, end_idx):
         distance, path = self.geodesic_calc.geodesicDistance(end_idx, start_idx)
-        print("From", start_idx)
-        print("to", end_idx)
-        print("Distance", distance)
         if self.greedy_geodesic:
             path = lift_path(path, self.obj, 0.00001)
-            print("before modification:", path[0], path[-1])
-            path = shortest_path_of(path)
-            path = lift_path(path, self.obj, -0.00001)
-            print("after modification:", path[0], path[-1])
+            path = shortest_path_of(path, self.min_greedy_point_difference)
             distance = 0
             for i in range(1, len(path)):
                 distance += np.linalg.norm(path[i] - path[i - 1])

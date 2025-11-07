@@ -243,110 +243,24 @@ template = """{
 
 def get_height(distance, radius):
     """
+    Calculates the real height of the camera to the earth.
+    """
+    """
     radius/distance = 6371_000 / real_distance
     ======>
     real_distance = 6371_000 * distance/radius
     """
     # Distanz des Erdmittelpunkts zur Kamera "in echt"
     real_distance = 6371_000 * distance / radius
-    return real_distance - 6371_000  # nur Distanz bis zur Erdoberfläche
+    return real_distance - 6371_000
 
-
-def otherATan2(x, y):
-    if x > 0:
-        return math.atan(y / x)
-    if x == 0:
-        math.pi / 2 * (-1 * y < 0)
-    if x < 0 and y >= 0:
-        return math.atan(y / x) + math.pi
-    if x < 0 and y < 0:
-        return math.atan(y / x) - math.pi
-    return 0
-
-
-def map_to_plane(position, earth_center):
-    # https://en.wikipedia.org/wiki/UV_mapping
-    d = (position - earth_center).normalized()
-    # if y = up-vector
-    # u = 0.5 + (np.arctan2(d[2], d[0])) / (2 * math.pi)
-    # v = 0.5 + np.arcsin(d[1]) / math.pi
-    # if z = up-vector
-    x, y, z = d
-    """
-    u = 0.5 + (np.arctan2(d[1], d[0])) / (2 * math.pi)
-    v = 0.5 + np.arcsin(d[2]) / math.pi
-    """
-    """
-    lat = math.atan2(z, math.hypot(x, y))  # [-pi/2, pi/2]
-    long = math.atan2(y, x)
-    """
-    # long, lat = math.acos(z), otherATan2(x,y)
-    lat, long = math.pi / 2 - math.acos(z), otherATan2(x, y)
-    return long, lat
-
-
-def map_uv_to_longlat(u, v):
-    # longitude = (u * 360) - 180
-    # latitude = (v * 180) - 90
-    return math.degrees(u), math.degrees(v)
-
-
-def extract_2d_position(position, earth_center, earth_radius):
-    return *map_uv_to_longlat(*map_to_plane(position, earth_center)), get_height(position, earth_center, earth_radius)
-
-
-def project_point_into_ebene(point, vec, normal):
-    return point + (normal @ (vec - point)) * normal
 
 def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371):
+    """
+    Calculate transformation of a camera in Blender by Google Earth Studio data
+    """
     from math import sin, cos, radians
     lat, long, pan, tilt, roll = [radians(i) for i in [lat, long, pan, tilt, roll]]
-    """
-    A0 = Vector([cos(long) * cos(lat),
-                 sin(long) * cos(lat),
-                 sin(lat)
-                 ])
-    E = (alt + r) * A0
-    HY = Vector([0, 0, 1])
-    #
-    R0 = (HY.cross(A0)).normalized()
-    #
-    U0 = A0.cross(R0)
-    #
-    RM0 = Matrix([
-        [R0[0], U0[0], A0[0]],
-        [R0[1], U0[1], A0[1]],
-        [R0[2], U0[2], A0[2]]])
-    #
-    RM_Pan = Matrix([
-        [cos(pan), sin(pan), 0],
-        [-sin(pan), cos(pan), 0],
-        [0, 0, 1]])
-    #
-    RM_Tilt = Matrix([
-        [1, 0, 0],
-        [0, cos(tilt), -sin(tilt)],
-        [0, sin(tilt), cos(tilt)]])
-    #
-    RM_Roll = Matrix([
-        [cos(roll), sin(roll), 0],
-        [-sin(roll), cos(roll), 0],
-        [0, 0, 1]])
-    #
-    RM1 = ((RM_Pan @ RM_Tilt) @ RM_Roll)
-    #
-    RM = (RM0 @ RM1)
-    ## das hier war nicht mehr drinne
-    MM_mirror = Matrix([
-        [-1, 0, 0],
-        [0, 1, 0],
-        [0, 0, -1]])
-    #
-    RM_pio = RM @ MM_mirror
-    # RM1_pio := Multiply( Transpose(RMO_pio) , Multiply( RM_pio, MM_mirror));
-    # RM1_pio = RMO_pio.transposed() @ Multiply(RM_pio, MM_mirror));
-    ## bis hier
-    """
     A0 = np.array([cos(long) * cos(lat),
                    sin(long) * cos(lat),
                    sin(lat)
@@ -354,7 +268,6 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371):
     # radius/distance           = 6371_000 / real_distance
     # earth_radius/scale_factor = 6371_000 / (alt+6371_000)
     # => scale_factor = earth_radius*(alt+6371_000)/6371_000
-    # before: E = Vector((alt+r) * A0)
     E = Vector((r * (alt + 6371_000) / 6371_000) * A0)
     HY = np.array([0, 0, 1])
     R0 = np.cross(HY, A0)
@@ -371,73 +284,40 @@ def camMatrixByPosition(lat, long, alt, pan, tilt, roll, r=6371):
         [cos(pan), sin(pan), 0],
         [-sin(pan), cos(pan), 0],
         [0, 0, 1]])
-    #
+
     RM_Tilt = np.array([
         [1, 0, 0],
         [0, cos(tilt), -sin(tilt)],
         [0, sin(tilt), cos(tilt)]])
-    #
+
     RM_Roll = np.array([
         [cos(roll), sin(roll), 0],
         [-sin(roll), cos(roll), 0],
         [0, 0, 1]])
-    #
+
     RM1 = ((RM_Pan @ RM_Tilt) @ RM_Roll)
-    #
+
     RM = (RM0 @ RM1)
-    # print(np.cross(RM[:, 1], RM[:, 2]))
+
     up = Vector(RM[:, 1])
     forward = -Vector(RM[:, 2])
-    """
-    dd :=
-    -Multiply(Transpose(A), E)
-    + sqrt(
-        + r ^ 2 * Multiply(Transpose(A), A)
-        - Multiply(Transpose(A & xE), A & xE)
-    );
-    """
+
     A = RM[:, 2]
     ae = np.cross(A, E)
-    dd = -np.dot(A,E) + math.sqrt(r**2 * np.dot(A,A) - np.dot(ae,ae))
-    return make_lookAt_matrix(E, forward, up), dd  # , E, forward, up
-    # mat,pos = camMatrixByPosition(0,45,20,20,11,23,2,2)
-    # mat= camMatrixByPosition(0,0,20,180,15,180,2,2)
+    dd = -np.dot(A, E) + math.sqrt(r ** 2 * np.dot(A, A) - np.dot(ae, ae))
+    return make_lookAt_matrix(E, forward, up), dd
 
 
 def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
     """
     Method to extract the rotation of the camera in Google Earth Studio Format
     """
-    """
-        cam = {
-            "position": pos.tolist(),
-            "view": view.tolist(),
-            "up": up.tolist(),
-            "frustum_scale": scale,
-            "focal": focal
-        }
-        """
     forward = -np.array(cam["view"])
     up = np.array(cam["up"])
     pos = np.array(cam["position"]) - earth_position
     RM = np.array([np.cross(up, forward), up, forward]).T
     E_pio = pos
-    """
-    Longitude_pio := simplify(arctan( E_pio[2],E_pio[1]));
-    Latitude_pio  := arctan( E_pio[3] , E_pio[1]/cos(Longitude_pio) );
-    Altitude_pio := sqrt(Multiply( Transpose(E_pio),E_pio)) - r;
-    
-    RMO_pio := Matrix(3, 3, [
-    [-sin(Longitude_pio), -sin(Latitude_pio)*cos(Longitude_pio), cos(Longitude_pio)*cos(Latitude_pio)], 
-    [cos(Longitude_pio), -sin(Latitude_pio)*sin(Longitude_pio), sin(Longitude_pio)*cos(Latitude_pio)], 
-    [0, cos(Latitude_pio), sin(Latitude_pio)]]);
-    
-    RM1_pio := Multiply( Transpose(RMO_pio) , Multiply( RM_pio, MM_mirror));
-    
-    Tilt_pio := arctan( sqrt(RM1_pio[1,3]^2 + RM1_pio[2,3]^2) , RM1_pio[3,3] );
-    Roll_pio := arctan( -RM1[3,1],RM1[3,2]);
-    Pan_pio := arctan(-RM1[1,3],-RM1[2,3]);
-    """
+
     longitude = math.atan2(E_pio[1], E_pio[0])
     latitude = math.atan2(E_pio[2], E_pio[0] / cos(longitude))
     altitude = Vector(E_pio).length  # - earth_radius  # for resulting file ist must be scaled to earth scale
@@ -448,14 +328,11 @@ def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
         [0, cos(latitude), sin(latitude)]])
     #
     RM1_pio = RMO_pio.T @ RM
-    # RM = (RM0 @ RM1)
-    # => RM1 = RM0 ^ -1 @ RM = RM0^T @ RM
     Tilt_pio = ((math.atan2(math.sqrt(RM1_pio[0, 2] ** 2 + RM1_pio[1, 2] ** 2), RM1_pio[2, 2]) + 2 * math.pi)
                 % (2 * math.pi))
     Roll_pio = math.atan2(-RM1_pio[2, 0], RM1_pio[2, 1])
     Pan_pio = (math.atan2(-RM1_pio[0, 2], -RM1_pio[1, 2]) + 2 * math.pi) % (2 * math.pi)
     return longitude, latitude, altitude, Pan_pio, Tilt_pio, Roll_pio
-    # math.degrees(longitude), math.degrees(latitude), altitude, math.degrees(Pan_pio), math.degrees(Tilt_pio), math.degrees(Roll_pio)
 
 
 def extract_data_from_cam(cam, earth_center, earth_radius):
@@ -479,6 +356,10 @@ def get_relative_value(value, min_value, max_value):
 
 
 class GoogleEarthStudio:
+    """
+    Class for getting and combine data for .esp files
+    """
+
     def __init__(self, frames=100, name="GoogleEarth", frame_rate=30, earth_center=Vector([0, 0, 0]), earth_radius=10):
         self.frames = frames
         self.name = name
@@ -512,17 +393,15 @@ class GoogleEarthStudio:
 
     def append_frame(self, cam, frame):
         long, lat, dist, rotX, rotY, rotZ = extract_data_from_cam(cam, self.earth_center, self.earth_radius)
-        time = frame/(self.frames-1) # time = np.linspace(0, 1, self.frames)[frame]
-        # self.longitudes.append({"time": time, "value": get_relative_value(long, -180, 180)})  # -180 bis +180
+        time = frame / (self.frames - 1)
         self.longitudes.append({"time": time, "value": get_relative_value(long, -math.pi,
-                                                                          math.pi)})  # -180, 179)}) # -math.pi, math.pi)})  # -180 bis +180
-        # self.latitudes.append({"time": time, "value": get_relative_value(lat, -90, 90)})  # -90 bis +90
+                                                                          math.pi)})
         self.latitudes.append(
-            {"time": time, "value": get_relative_value(lat, -math.pi / 2, math.pi / 2)})  # -90,89)}) #   # -90 bis +90
-        self.distances.append({"time": time, "value": get_relative_value(dist, -500, 65117481)})  # -500 bis 65117481
+            {"time": time, "value": get_relative_value(lat, -math.pi / 2, math.pi / 2)})
+        self.distances.append({"time": time, "value": get_relative_value(dist, -500, 65117481)})
         self.rotationsX.append(
-            {"time": time, "value": get_relative_value(rotX, 0, 2 * math.pi)})  # 0, 359)}) #  # ??? 0 - 360°
+            {"time": time, "value": get_relative_value(rotX, 0, 2 * math.pi)})
         self.rotationsY.append(
-            {"time": time, "value": get_relative_value(rotY, 0, math.pi)})  # 0,179)}) #   # 0° bis 180° || 0 - PI
+            {"time": time, "value": get_relative_value(rotY, 0, math.pi)})
         self.rotationsZ.append(
-            {"time": time, "value": get_relative_value(rotZ, 0, 2 * math.pi)})  # 0,359)}) #   # 0° bis 360°
+            {"time": time, "value": get_relative_value(rotZ, 0, 2 * math.pi)})

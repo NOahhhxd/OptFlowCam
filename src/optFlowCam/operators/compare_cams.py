@@ -15,6 +15,9 @@ from ..utility import cam_to_sample
 
 
 def create_convex_hull_object(obj, collection_name):
+    """
+    Create a convex hull object around a given object
+    """
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     ch = bmesh.ops.convex_hull(bm, input=bm.verts)
@@ -58,6 +61,9 @@ def create_cam(position, view, up, scale, focal):
 
 
 def get_shortest_bb_diagonal(bounding_box, matrix):
+    """
+    Calculate the shortest diagonal of the bounding box of an object
+    """
     min_length = None
     for i in range(2, len(bounding_box)):
         length = (matrix @ Vector(bounding_box[i]) - matrix @ Vector(bounding_box[(i + 2) % len(bounding_box)])).length
@@ -67,6 +73,9 @@ def get_shortest_bb_diagonal(bounding_box, matrix):
 
 
 def add_material(objects, color, transparent=False):
+    """
+    Add a color to the object
+    """
     mat = bpy.data.materials.new(name="TransparentMaterial")
     if transparent:
         mat.use_nodes = True
@@ -93,8 +102,7 @@ def add_material(objects, color, transparent=False):
 
 def random_spherical_pos(vertex_co, vertex_normal, matrix, r):
     """
-    x = random()
-    theta = (x ** 2 + x ** (1 / 2)) / 2 * radians(80)
+    Returns a random position by spherical coordinates
     """
     theta = random() * radians(80)
     phi = random() * 2 * pi
@@ -108,10 +116,16 @@ def random_spherical_pos(vertex_co, vertex_normal, matrix, r):
 
 
 def get_up(view):
+    """
+    Returns the up vector by a view vector
+    """
     return view.cross([0, 0, 1]).cross(view)
 
 
 def create_cams(object_mesh, matrix, min_scale, max_scale, is_earth_cam=False):
+    """
+    Creates a random camera that looks on an object
+    """
     scale_base = get_shortest_bb_diagonal(object_mesh.bound_box, object_mesh.matrix_world) / 2
     if is_earth_cam:
         # for 20° FOV of google earth
@@ -147,6 +161,9 @@ def create_cams(object_mesh, matrix, min_scale, max_scale, is_earth_cam=False):
 
 
 def is_triangle_mesh(mesh):
+    """
+    Determine if a mesh is a triangle mesh
+    """
     if len(mesh.polygons) == 0:
         return False
     min_face_count, max_face_count = 4, 2
@@ -160,6 +177,9 @@ def is_triangle_mesh(mesh):
 
 
 def get_look_at_points(cams):
+    """
+    Returns the points the camera is looking at
+    """
     # pos = lookat - scale * focal * view => lookat = pos + scale*focal*view
     context = bpy.context
     vl = context.view_layer
@@ -183,6 +203,9 @@ def create_spheres_at(positions, collection_name, size=Vector((1, 1, 1))):
 
 
 def middleOfBB(obj):
+    """
+    Calculates the middle of the bounding box of the given object.
+    """
     bb = [obj.matrix_world @ Vector(i) for i in obj.bound_box]
     middle = Vector([0, 0, 0])
     for elem in bb:
@@ -191,6 +214,9 @@ def middleOfBB(obj):
 
 
 def create_outside_cam(start_pos, end_pos, obj, collection_name):
+    """
+    Create the overview camera for the overview image
+    """
     middle = start_pos + (end_pos - start_pos) / 2
     obj_mid = middleOfBB(obj)
     obj_mid_to_middle = middle - obj_mid
@@ -343,7 +369,7 @@ class OFC_OT_CompareInterpolateCamera(bpy.types.Operator):
 
             if render_animation:
                 filenames.append(f"{exporting_path}\\{metric}.mp4")
-                render_scene(cams[i], filenames[-1], end_frame=n_frames)
+                render_scene(cams[i], filenames[-1], start_frame=knots[0], end_frame=knots[1], context=context)
             wm.progress_update(3 + 90 / len(metrics) * (i + 1))
 
         if render_animation:

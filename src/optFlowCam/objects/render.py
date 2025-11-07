@@ -4,12 +4,12 @@ import bpy
 
 
 def render_scene(cam, file_path, context, start_frame=0, end_frame=100):
+    """
+    Renders a video
+    """
     scene = context.scene
-    #if scene.sequence_editor:
-    #    scene.sequence_editor_clear()
     scene.render.use_sequencer = False
     scene.camera = cam
-    print("Kamera fuer Video:", scene.camera, scene.name)
     scene.render.filepath = file_path
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
     scene.render.filepath = file_path
@@ -26,11 +26,13 @@ def render_scene(cam, file_path, context, start_frame=0, end_frame=100):
 
 
 def render_single_image(cam, file_path, context):
+    """
+    Renders a single image
+    """
     scene = context.scene
     scene.render.use_sequencer = False
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
     scene.camera = cam
-    print("Kamera fuer Bild:", scene.camera)
     scene.render.filepath = file_path
     scene.render.resolution_x = 1920
     scene.render.resolution_y = 1080
@@ -51,16 +53,16 @@ def add_video(filepath, start, num, scene):
     clip.transform.scale_x = 0.5
     clip.transform.scale_y = 0.5
     if num == 1:
-        clip.transform.origin[0] = 0  # scene.render.resolution_x/8
+        clip.transform.origin[0] = 0
         clip.transform.origin[1] = 1
     elif num == 2:
-        clip.transform.origin[0] = 1  # scene.render.resolution_x/8
+        clip.transform.origin[0] = 1
         clip.transform.origin[1] = 1
     elif num == 3:
-        clip.transform.origin[0] = 0  # scene.render.resolution_x/8
+        clip.transform.origin[0] = 0
         clip.transform.origin[1] = 0
     else:
-        clip.transform.origin[0] = 1  # scene.render.resolution_x/8
+        clip.transform.origin[0] = 1
         clip.transform.origin[1] = 0
     return clip
 
@@ -72,16 +74,8 @@ def add_image(filepath, num, scene, end):
         channel=num,
         frame_start=0,
     )
-    """
-    img.transform.scale_x = 0
-    img.transform.scale_y = 0
-    for i in range(offset, end + 1):
-        img.transform.keyframe_insert("scale_x", frame=i)
-        img.transform.keyframe_insert("scale_y", frame=i)
-    """
     img.transform.scale_x = 1
     img.transform.scale_y = 1
-    # for i in range(offset // 2 + 1):
     for i in range(end):
         img.transform.keyframe_insert("scale_x", frame=i)
         img.transform.keyframe_insert("scale_y", frame=i)
@@ -91,6 +85,9 @@ def add_image(filepath, num, scene, end):
 
 
 def combine_clips(file_paths, overview_path, path, context):
+    """
+    Combines different clips and an image to one clip
+    """
     START_OFFSET = 48
     random.shuffle(file_paths)
     scene = context.scene
@@ -113,4 +110,4 @@ def combine_clips(file_paths, overview_path, path, context):
     bpy.ops.render.render(animation=True)
     scene.sequence_editor_clear()
     with open(f"{path}\\solution.txt", "w+") as f:
-        f.write("\n".join([f"{idx + 1}{clip}" for idx, clip in enumerate(file_paths)]))
+        f.write("\n".join([f"{idx + 1}{clip.split("\\")[-1]}" for idx, clip in enumerate(file_paths)]))
