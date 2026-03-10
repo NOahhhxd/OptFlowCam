@@ -20,4 +20,5 @@ __pycache__/
 # generated addon zip files
 *.zip
 
-*.blend*
+*.blend
+*.blend1
