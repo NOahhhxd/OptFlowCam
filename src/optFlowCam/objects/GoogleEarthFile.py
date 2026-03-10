@@ -317,7 +317,7 @@ def extract_rotation(cam, earth_position=np.array((0, 0, 0)), earth_radius=10):
     pos = np.array(cam["position"]) - earth_position
     RM = np.array([np.cross(up, forward), up, forward]).T
     E_pio = pos
-
+    #
     longitude = math.atan2(E_pio[1], E_pio[0])
     latitude = math.atan2(E_pio[2], E_pio[0] / cos(longitude))
     altitude = Vector(E_pio).length  # - earth_radius  # for resulting file ist must be scaled to earth scale

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import bisect
 import copy
@@ -5,18 +7,123 @@ from functools import partial
 from multiprocessing.pool import Pool
 from typing import Any
 
-import bmesh
-import bpy
-
 from pygeodesic import geodesic
 
-from mathutils import Vector
+import bpy
+import bmesh
+from mathutils import Vector, Quaternion
 
-from .math import get_rotation, normalized
+from .math import get_rotation, normalized, get_orthonormal_basis
 from .objects.path_geometry import add_path_object, update_path
 from .utility import unpack_camera
 
-from .objects.GoogleEarthFile import GoogleEarthStudio
+from .objects.GoogleEarthFile import GoogleEarthStudio, extract_rotation, camMatrixByPosition
+
+
+def slerp(p1, p2, t, arc_length):
+    # math.acos((p1 @ p2) / (p1.length * p2.length))
+    angle_between = math.acos(arc_length)
+    if angle_between < math.pi / 360:
+        return (1 - t) * p1 + t * p2  # p1 + t*(p2-p1) => p1 - t*p1 + t*p2 => ...
+
+    return (math.sin((1 - t) * angle_between) / math.sin(angle_between) * p1
+            + math.sin(t * angle_between) / math.sin(angle_between) * p2)
+
+
+def interpolate_points_spherical(p1, p2, middle, t, arc_length):
+    p1_n, p2_n = (p1 - middle).normalized(), (p2 - middle).normalized()
+    return slerp(p1_n, p2_n, t, arc_length) * (p1 - middle).length + middle
+
+
+def weighted_decasteljeau(points, weights, t):
+    p = [[Vector([0, 0, 0]) for _ in range(1, n + 1)] for n in range(len(points), 0, -1)]
+    p[0] = points[::]
+    w = [[0 for _ in range(0, n)] for n in range(len(weights), 0, -1)]
+    w[0] = weights[::]
+    # copyto!(w[1], weights)
+    for idx in range(1, len(points) + 1):
+        for i in range(0, len(points) - idx):
+            w[idx][i] = (1 - t) * w[idx - 1][i] + t * w[idx - 1][i + 1]
+            p[idx][i] = (w[idx - 1][i] * (1 - t) * p[idx - 1][i] + w[idx - 1][i + 1] * t * p[idx - 1][i + 1]) / w[idx][
+                i]
+    return p[-1][0]
+
+
+def calculate_north_alignment(cam, earth_radius):
+    # calculate spherical coordinates
+    longitude, latitude, altitude, _, _, _ = extract_rotation(cam, earth_radius=earth_radius)
+    """
+    # E_pio = pos-earth.location
+    longitude = math.atan2(E_pio[1], E_pio[0])
+    latitude = math.atan2(E_pio[2], E_pio[0] / cos(longitude))
+    altitude = Vector(E_pio).length  # - earth_radius  # for resulting file ist must be scaled to earth scale
+    altitude = get_height(altitude, earth_radius)
+    """
+    # calculate rotation-matrix from these values with pan/tilt/roll = 0
+    matrix, scale = camMatrixByPosition(math.degrees(longitude), math.degrees(latitude), altitude, 0, 0, 0,
+                                        earth_radius)
+    """
+    cam_obj.matrix_world = matrix
+    cam_obj.scale = scale * Vector((1, 1, 1))
+    """
+    """
+    mat = cam.matrix_world
+    pos, rot, _ = mat.decompose()
+    forw = rot @ Vector((0,0,-1))
+    up = rot @ Vector((0,1,0))
+    c = {
+        'position': list(pos),
+        'view' : list(forw),
+        'up' : list(up),
+        'focal' : get_focal_length(cam),
+        'frustum_scale' : max(list(cam.scale))
+    }
+    """
+    # mat = cam.matrix_world
+    pos, rot, _ = matrix.decompose()
+    forw = rot @ Vector((0, 0, -1))
+    up = rot @ Vector((0, 1, 0))
+    _, _, right = get_orthonormal_basis({'view': forw,
+                                         'up': up})
+    return {
+        'position': list(pos),
+        'view': list(forw),
+        'up': list(up),
+        'right': list(right),
+        'focal': 1.639344262295082,
+        'frustum_scale': scale
+    }
+
+
+def interpolate_matrices(start, end, earth_radius, t, weight):
+    start_north = calculate_north_alignment(start, earth_radius)
+    end_north = calculate_north_alignment(end, earth_radius)
+    cam = weighted_rotation_interpolation([start, start_north, end_north, end], [1, weight, weight, 1], t)
+    vecs = [cam[key] for key in ["view", "right", "up"]]
+
+    # basis matrix for start
+    R = np.array([vecs[1], vecs[2], vecs[0]]).T
+    return R
+
+
+def interpolate_matrices_2(start, end, t):
+    _, R_f = get_rotation(start, end)  ##
+    R = R_f(t)
+    up = R[:, 1]
+    view = R[:, 2]
+    right = R[:, 0]
+    # _, _, right = get_orthonormal_basis({"view": view, "up": up})
+    return {"view": view, "up": up, "right": right}
+
+
+def weighted_rotation_interpolation(matrices, weights, t):
+    w = [i for i in weights]
+    for idx in range(1, len(matrices) + 1):
+        for i in range(0, len(matrices) - idx):
+            t_normalized = (w[i + 1] * t) * ((1 - t) * w[i] + t * w[i + 1])
+            matrices[i] = interpolate_matrices_2(matrices[i], matrices[i + 1], t_normalized)
+            w[i] = (1 - t) * w[i] + t * w[i + 1]
+    return matrices[0]
 
 
 def export_geoposition_data(cams, num_frames, metric, file_path, earth_center=Vector((0, 0, 0)), earth_radius=10):
@@ -53,7 +160,7 @@ def shortest_path_of(path, min_distance=2):
     # worst case: O(n^3/6) or O(n/3 * n * n/2)
     # more likely: O(k * n^2/2) or O(k * n * n/2) with k << n
     while True:
-        print(len(path))
+        # print(len(path))
         longest_line = None
         for idx, coord in enumerate(path):
             for i in range(len(path) - 1, idx + (min_distance - 1), -1):
@@ -72,7 +179,7 @@ def shortest_path_of(path, min_distance=2):
         if not longest_line:
             return path
         else:
-            del path[longest_line[0] + 1:longest_line[1]]       
+            del path[longest_line[0] + 1:longest_line[1]]
         if len(path) < 3:
             return path
 
@@ -90,45 +197,80 @@ def lift_path(path, obj, factor=0.00001):
     return result
 
 
+def calculate_sphere_lookat(position, view_direction, center, radius) -> Vector:
+    forward = view_direction
+    # up = np.array(cam["up"])
+    # pos = position - center
+    # RM = np.array([np.cross(up, forward), up, forward]).T
+    E = position - center
+    A = forward
+    ae = np.cross(A, E)
+    dd = -np.dot(A, E) + math.sqrt(radius ** 2 * np.dot(A, A) - np.dot(ae, ae))
+    lookat = position + forward * dd
+    return lookat # , lookat.length, dd
+
+
 class InterpolateGeodesic:
     """
     Class to calculate and interpolate the geodesic between two camera look-at points
     """
-    def __init__(self, start_cam, end_cam, focal, greedy_method=False, min_greedy_point_difference=2):
+
+    def __init__(self, start_cam: dict, end_cam: dict, focal: float, greedy_method=False,
+                 min_greedy_point_difference=2, is_sphere=False):
         """
         Initialized attributes and calculates the geodesic between start and end cam
         """
-        start_eyepoint = start_cam["position"]
-        start_view_direction = start_cam["view"]
-        end_eyepoint = end_cam["position"]
-        end_view_direction = end_cam["view"]
+        self.is_sphere = is_sphere
+        self.start = None
+        self.end = None
+        start_eyepoint = Vector(start_cam["position"])
+        start_view_direction = Vector(start_cam["view"])
+        end_eyepoint = Vector(end_cam["position"])
+        end_view_direction = Vector(end_cam["view"])
         self.greedy_geodesic = greedy_method
         if self.greedy_geodesic:
             self.min_greedy_point_difference = min_greedy_point_difference
 
         context = bpy.context
         vl = context.view_layer
-        obj, start_face_idx, start_loc = self.raycast(start=start_eyepoint, direction=start_view_direction)
-        obj2, end_face_idx, end_loc = self.raycast(start=end_eyepoint, direction=end_view_direction)
-        if obj and obj == obj2 and obj.type == "MESH":
-            self.mesh = obj.evaluated_get(vl.depsgraph).to_mesh()
-            self.obj = obj
-        else:
-            raise ValueError("Start-/Endkamera müssen auf dasselbe Objekt gerichtet sein")
         self.distance = None
         self.path = []
-        if start_face_idx == end_face_idx:
-            self.path = [(start_loc, 0), (end_loc, 1)]
-            self.distance = (start_loc - end_loc).length
+
+        if not is_sphere:
+            print("initializing")
+            obj, start_face_idx, start_loc = self.raycast(start=start_eyepoint, direction=start_view_direction)
+            obj2, end_face_idx, end_loc = self.raycast(start=end_eyepoint, direction=end_view_direction)
+            if obj and obj == obj2 and obj.type == "MESH":
+                self.mesh = obj.evaluated_get(vl.depsgraph).to_mesh()
+                self.obj = obj
+            else:
+                raise ValueError("Start-/Endkamera müssen auf dasselbe Objekt gerichtet sein")
+
+            if start_face_idx == end_face_idx:
+                self.path = [(start_loc, 0), (end_loc, 1)]
+                self.distance = (start_loc - end_loc).length
+            else:
+                faces = [i.vertices for i in self.mesh.polygons if
+                         i.index != start_face_idx and i.index != end_face_idx]
+                start_face = self.mesh.polygons[start_face_idx].vertices
+                end_face = self.mesh.polygons[end_face_idx].vertices
+                faces += new_face(start_face, len(self.mesh.vertices))
+                faces += new_face(end_face, len(self.mesh.vertices) + 1)
+                self.geodesic_calc = geodesic.PyGeodesicAlgorithmExact(
+                    [self.obj.matrix_world @ i.co for i in self.mesh.vertices] + [start_loc, end_loc], faces)
+                self.calculate(0, 1, len(self.mesh.vertices))
         else:
-            faces = [i.vertices for i in self.mesh.polygons if i.index != start_face_idx and i.index != end_face_idx]
-            start_face = self.mesh.polygons[start_face_idx].vertices
-            end_face = self.mesh.polygons[end_face_idx].vertices
-            faces += new_face(start_face, len(self.mesh.vertices))
-            faces += new_face(end_face, len(self.mesh.vertices) + 1)
-            self.geodesic_calc = geodesic.PyGeodesicAlgorithmExact(
-                [self.obj.matrix_world @ i.co for i in self.mesh.vertices] + [start_loc, end_loc], faces)
-            self.calculate(0, 1, len(self.mesh.vertices))
+            center = Vector([0,0,0]) # self.obj.location
+            radius = 100 # self.obj.scale[0]  # (self.obj.matrix_world@self.mesh.vertices[0].co-center).length
+            self.sphere_data = (center, radius)
+
+            self.start_loc = calculate_sphere_lookat(start_eyepoint, start_view_direction, center, radius)
+            # self.q1 = Quaternion([0]+list(start_loc.normalized()[:]))
+            # self.q2 = Quaternion([0]+list(end_loc.normalized()[:]))
+            self.end_loc = calculate_sphere_lookat(end_eyepoint, end_view_direction, center, radius)
+            self.arc_length = (self.start_loc - center).normalized() @ (self.end_loc - center).normalized()
+            self.arc_length = max(min(self.arc_length, 1), -1)
+            self.distance = radius * math.acos(self.arc_length)
 
     def calculate(self, start_t, end_t, idx):
         """
@@ -140,26 +282,35 @@ class InterpolateGeodesic:
         print(f"Length of {'modified' if self.greedy_geodesic else ''} path: {len(path)}")
         self.mix_path_with_time(path, start_t, end_t)
 
+    def set_start_end(self, start, end):
+        self.start = start
+        self.end = end
+
     def get_distance(self):
         return self.distance
 
     def interpolate(self, t):
         """
         Interpolates a point of the geodesic path by t (0 <= t <= 1)
+        structure of self.path[i] = (coordinates, time)
         """
-        # structure of self.path[i] = (coordinates, time)
-        idx = self.find_t_idx(t)
-        idx = min(max(0, idx), len(self.path) - 1)
-        next_element = self.path[idx]
-        next_t = next_element[1]
-        if next_t != t:
-            last_element = self.path[idx - 1]
-            last_t = last_element[1]
-            t_diff = next_t - last_t
-            t_part = (t - last_t) / t_diff
-            return (1 - t_part) * last_element[0] + t_part * next_element[0]
+        if not self.is_sphere:
+            print(f"interpolation {t}")
+            idx = self.find_t_idx(t)
+            idx = min(max(0, idx), len(self.path) - 1)
+            next_element = self.path[idx]
+            next_t = next_element[1]
+            if next_t != t:
+                last_element = self.path[idx - 1]
+                last_t = last_element[1]
+                t_diff = next_t - last_t
+                t_part = (t - last_t) / t_diff
+                return (1 - t_part) * last_element[0] + t_part * next_element[0]
+            else:
+                return next_element[0]
         else:
-            return next_element[0]
+            return interpolate_points_spherical(self.start_loc, self.end_loc, self.sphere_data[0], t, self.arc_length)
+            # return self.sphere_data[0]*Vector(slerpQuaternion(self.q1, self.q2, t)[1:])
 
     def raycast(self, start, direction) -> tuple[Any, Any, Any]:
         context = bpy.context
@@ -171,6 +322,7 @@ class InterpolateGeodesic:
         return obj_0, face_idx, loc
 
     def find_geodesic_path_between(self, start_idx, end_idx):
+        print("calc path")
         distance, path = self.geodesic_calc.geodesicDistance(end_idx, start_idx)
         if self.greedy_geodesic:
             path = lift_path(path, self.obj, 0.00001)
@@ -180,6 +332,7 @@ class InterpolateGeodesic:
                 distance += np.linalg.norm(path[i] - path[i - 1])
 
         self.distance = distance
+        print("path calculated")
         return path
 
     def mix_path_with_time(self, path, start_t, end_t):
@@ -194,10 +347,14 @@ class InterpolateGeodesic:
         return bisect.bisect_left(self.path, t, key=lambda x: x[1])
 
     def update_path_object(self, path_object):
-        update_path(path_object, [{"position": i[0]} for i in self.path])
+        if self.is_sphere:
+            update_path(path_object,
+                        [{"position": i[0]} for i in [self.interpolate(t) for t in np.linspace(0, 1, 100)]])
+        else:
+            update_path(path_object, [{"position": i[0]} for i in self.path])
 
 
-interpolate_geodesics: InterpolateGeodesic = None
+interpolate_geodesics: list[InterpolateGeodesic] = None
 
 
 def get_zoom_pan_parameter_functions(w0: float, w1: float,
@@ -308,9 +465,24 @@ def find_good_way_between(look1: np.ndarray, look2: np.ndarray, meshes=None) -> 
 """
 
 
-def m(t):
+def m(t: float, idx: int):
     assert interpolate_geodesics is not None
-    return interpolate_geodesics.interpolate(t)
+    return interpolate_geodesics[idx].interpolate(t)
+
+
+def find_fitting_geodesic(start: dict, end: dict) -> int:
+    # global interpolate_geodesics
+    print(len(interpolate_geodesics))
+    print("wanna find", start, end)
+    print("in", [(g.start, g.end) for g in interpolate_geodesics])
+    for idx, geodesic in enumerate(interpolate_geodesics):
+        if geodesic.start == start and geodesic.end == end:
+            return idx
+    return -1
+
+
+def interpolate_along_earth_axis(start, end, earth_radius, weight):
+    return lambda t: interpolate_matrices(start, end, earth_radius, weight, t)
 
 
 def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
@@ -340,11 +512,24 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         right2 = kwargs["right2"]
         s2 = kwargs["s2"]
 
-    if not "R_f" in kwargs:
-        _, R_f = get_rotation({"view": view1, "up": up1, "right": right1},
-                              {"view": view2, "up": up2, "right": right2})
+    if (False  # for Debugging purpose
+            and ("3DImageFlowGeodesicEarthRot" in metric
+                 and "earth_radius" in kwargs and kwargs["earth_radius"]
+                 and "weight" in kwargs and kwargs["weight"])):
+        u, _ = get_zoom_pan_parameter(1 / 3, 1, 1, 0, 1, kwargs["rho"])
+        idx = find_fitting_geodesic(start, end)
+        assert idx > -1, "No fitting geodesic found"
+        lookat_start = m(u, idx)
+        lookat_end = m(1 - u, idx)
+        R_f = interpolate_along_earth_axis({"view": view1, "up": up1, "right": right1, "position": lookat_start},
+                                           {"view": view2, "up": up2, "right": right2, "position": lookat_end},
+                                           kwargs["weight"], kwargs["earth_radius"])
     else:
-        R_f = kwargs["R_f"]
+        if not "R_f" in kwargs:
+            _, R_f = get_rotation({"view": view1, "up": up1, "right": right1},
+                                  {"view": view2, "up": up2, "right": right2})
+        else:
+            R_f = kwargs["R_f"]
 
     # interpolating look at points
     look1 = pos1 + s1 * focal * view1
@@ -381,15 +566,25 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         w0 = s1
         w1 = s2
         u0 = 0
+        """
+        if "original_start" in kwargs:
+            start = kwargs["original_start"]
+        if "original_end" in kwargs:
+            end = kwargs["original_end"]
+        """
+        idx = find_fitting_geodesic(start, end)
+        assert idx > -1, "No fitting geodesic found"
         # u1 = 1
-        u1 = interpolate_geodesics.get_distance()  # np.linalg.norm(look_diff)
+        u1 = interpolate_geodesics[idx].get_distance()  # np.linalg.norm(look_diff)
+        # assert u1 != 0, f"start: {start}    end: {end}"
         # look_diff_n = np.zeros(3) if u1 < 1e-14 else normalized(look_diff)
         u, w = get_zoom_pan_parameter(t, w0, w1, u0, u1, rho)
 
         # look_at_point = m(u)
         # look_diff_n = interpolate_geodesics.get_distance()
         # cam = cam_from_params2(u, w, R_f(t), focal, look_at_point, look_diff_n)
-        cam = cam_from_params2(u / u1, w, R_f(t), focal)
+        # was the last cam = cam_from_params2(u / u1 if u1 != 0 else t, w, R_f(t), focal, idx)
+        cam = cam_from_params2(u / u1, w, R_f(t), focal, idx)
         # cam = cam_from_params2(u / u1, w, R_f(t), focal)
 
         return cam
@@ -447,26 +642,18 @@ def get_camera_distance(start: dict, end: dict,
         _, _, S = get_zoom_pan_parameter_functions(w0, w1, u0, u1, rho)
 
         dist = np.sqrt((S * S) / 2 + (beta_end * beta_end) / 6)
-    elif metric == "3DImageFlowGeodesic":
+    elif "3DImageFlowGeodesic" in metric:
         rho = kwargs["rho"]
         w0 = s1;
         w1 = s2
         u0 = 0;
-        u1 = 1  # interpolate_geodesics.get_distance()
+        idx = find_fitting_geodesic(start, end)
+        assert idx > -1, "No fitting geodesic found"
+        u1 = interpolate_geodesics[idx].get_distance()
+        # u1 = 1  # interpolate_geodesics.get_distance()
 
         _, _, S = get_zoom_pan_parameter_functions(w0, w1, u0, u1, rho)
-        # TODO: Die geodätische Länge mit einbeziehen
         dist = np.sqrt((S * S) / 2 + (beta_end * beta_end) / 6)
-    # elif metric == "3DImageFlowGeodesic":
-    #    lookat_point = m(t, start=pos1, end=pos2)
-    #    look_diff = lookat_point - look1
-    #    rho = kwargs["rho"]
-    #    w0 = s1;
-    #    w1 = s2
-    #    u0 = 0;
-    #    u1 = np.linalg.norm(look_diff)
-    #    _, _, S = get_zoom_pan_parameter_functions(w0, w1, u0, u1, rho)
-    #    dist = np.sqrt((S * S) / 2 + (beta_end * beta_end) / 6)
     else:
         raise ValueError(f"Unknown metric {metric}")
 
@@ -474,14 +661,14 @@ def get_camera_distance(start: dict, end: dict,
 
 
 def cam_from_params2(u: float, w: float,
-                     R: np.ndarray, focal: float) -> dict:
+                     R: np.ndarray, focal: float, idx: int) -> dict:
     # , start: np.ndarray, end: np.ndarray) -> dict:
     up = R[:, 1]
     view = R[:, 2]
     scale = w
 
-    lookat = m(u)
-    print("lookat", lookat)
+    lookat = m(u, idx)
+    # print("lookat", lookat)
     pos = np.array(lookat) - np.array(scale * focal * view)
 
     cam = {
@@ -524,10 +711,14 @@ def clone_cam(cam):
     }
 
 
-def resize(cam, t):
+def resize(cam, t, geodesic=None):
     # pos = lookat - scale * focal * view
     # => scale = (pos - lookat)/(focal*view)
-    coords = Vector(interpolate_geodesics.interpolate(t))
+    if geodesic:
+        coords = Vector(geodesic.interpolate(t))
+    else:
+        coords = Vector(interpolate_geodesics.interpolate(t))
+
     pos = Vector(cam["position"])
     cam["frustum_scale"] = (coords - pos).length / cam["focal"]
     return cam
@@ -542,16 +733,17 @@ def interpolate_simple(start: dict, end: dict,
 
     kwargs should contain the parameter rho if metric==3DImageFlow.
     '''
+    """
     if "3DImageFlowGeodesic" in metric:
         global interpolate_geodesics
         greedy = metric == "3DImageFlowGeodesicGreedy"
         min_greedy_point_difference = 2
         if "min_greedy_point_difference" in kwargs:
             min_greedy_point_difference = kwargs["min_greedy_point_difference"]
-        interpolate_geodesics = InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal, greedy_method=greedy,
-                                                    min_greedy_point_difference=min_greedy_point_difference)
+        interpolate_geodesics = [InterpolateGeodesic(start_cam=start, end_cam=end, focal=focal, greedy_method=greedy,
+                                                    min_greedy_point_difference=min_greedy_point_difference)]
         if "geodesic_path_object" in kwargs and kwargs["geodesic_path_object"]:
-            interpolate_geodesics.update_path_object(kwargs["geodesic_path_object"])
+            interpolate_geodesics[0].update_path_object(kwargs["geodesic_path_object"])
         start_cam = clone_cam(start)
         end_cam = clone_cam(end)
         print("scale before: start = ", start_cam["frustum_scale"], ", end = ", end_cam["frustum_scale"])
@@ -567,15 +759,11 @@ def interpolate_simple(start: dict, end: dict,
                               start=start, end=end,
                               **kwargs)
                 for t in np.linspace(0, 1, n)]
-
-    if "generate_earth_file" in kwargs and kwargs["generate_earth_file"]:
-        print("Exporting data...")
-        earth = kwargs["move_around_object"]
-        earth_position = earth.location
-        earth_radius = (earth.matrix_world @ (earth.data.vertices[0].co - earth.location)).length
-        export_geoposition_data(cams, n, metric, kwargs["file_path"], earth_center=earth_position,
-                                earth_radius=earth_radius)  # [np.array(cam["position"]) for cam in cams])
-        print("Exporting finished")
+    """
+    cams = [interpolate_t(t, focal, metric,
+                          start=start, end=end,
+                          **kwargs)
+            for t in np.linspace(0, 1, n)]
     return cams
 
 
@@ -643,6 +831,11 @@ def interpolate_CatmullRom(t: float, control_points: list, knots: list,
     assert len(segment_control_points) == 4 and len(
         segment_knots) == 4, f"Should be 4 but is {len(segment_control_points)} and {len(segment_knots)}"
 
+    original_start = segment_control_points[1]
+    original_end = segment_control_points[-2]
+    """
+    current_t = [i for i in segment_knots]
+    """
     # see
     # C. Yuksel, S. Schaefer, and J. Keyser, “On the parameterization of Catmull-Rom curves,” 
     # in 2009 SIAM/ACM Joint Conference on Geometric and Physical Modeling, 2009-10. 
@@ -654,9 +847,20 @@ def interpolate_CatmullRom(t: float, control_points: list, knots: list,
             else:
                 s = (t - segment_knots[1]) / (segment_knots[2] - segment_knots[1])
 
-            cam = interpolate_t(s, focal, metric, start=segment_control_points[i], end=segment_control_points[i + 1],
-                                **kwargs)
+            start = segment_control_points[i]
+            end = segment_control_points[i + 1]
+            if interpolate_geodesics and start != end and find_fitting_geodesic(start, end) == -1:
+                interpolate_geodesics.append(InterpolateGeodesic(start, end, greedy_method=True, focal=start["focal"],
+                                                                 is_sphere=kwargs.get('is_earth', False)))
+                interpolate_geodesics[-1].set_start_end(start, end)
+
+            if interpolate_geodesics and start == end:
+                cam = interpolate_t(s, focal, metric, start=original_start, end=original_end, **kwargs)
+            else:
+                cam = interpolate_t(s, focal, metric, start=start, end=end,
+                                    **kwargs)  # , original_start=original_start, original_end=original_end, original_start_t=current_t[i], original_end_t=current_t[i + 1])
             segment_control_points[i] = cam
+            # current_t[i] = s
 
     return segment_control_points[0]
 
@@ -744,45 +948,95 @@ def interpolate_keyframes(control_points: list, knots: list,
     if len(control_points) != len(knots):
         raise ValueError("Number of control points and number of knots are not equal")
 
-    if len(control_points) == 2:
-        return interpolate_simple(control_points[0], control_points[1], focal, metric, n, **kwargs)
+    new_control_points = []
+    if "3DImageFlowGeodesic" in metric:
+        global interpolate_geodesics
+        interpolate_geodesics = []
+        greedy = metric == "3DImageFlowGeodesicGreedy"
+        min_greedy_point_difference = 2
+        if "min_greedy_point_difference" in kwargs:
+            min_greedy_point_difference = kwargs["min_greedy_point_difference"]
+
+        new_control_points = [clone_cam(cam) for cam in control_points]
+        for i in range(0, len(control_points) - 1):
+            interpolate_geodesics.append(
+                InterpolateGeodesic(start_cam=control_points[i], end_cam=control_points[i + 1], focal=focal,
+                                    greedy_method=greedy,
+                                    min_greedy_point_difference=min_greedy_point_difference,
+                                    is_sphere="3DImageFlowGeodesicEarthRot" in metric or kwargs.get('is_earth', False)))
+            new_control_points[i] = resize(new_control_points[i], 0, interpolate_geodesics[i])
+            if i > 0:
+                interpolate_geodesics[i - 1].set_start_end(new_control_points[i - 1], new_control_points[i])
+        new_control_points[-1] = resize(new_control_points[-1], 1, interpolate_geodesics[-1])
+        interpolate_geodesics[-1].set_start_end(new_control_points[-2], new_control_points[-1])
+    else:
+        new_control_points = control_points
+
+    if len(new_control_points) == 2:
+        return interpolate_simple(new_control_points[0], new_control_points[1], focal, metric, n, **kwargs)
 
     normalized_knots = np.array(copy.deepcopy(knots))
     normalized_knots -= knots[0]
     normalized_knots = normalized_knots / (knots[-1] - knots[0])
 
     cams = None
-
     if method == "Linear":
         cams = []
         for i, knot in enumerate(knots[:-1]):
             nn = knots[i + 1] - knot
-            cams.extend(interpolate_simple(control_points[i], control_points[i + 1], focal, metric, nn, **kwargs))
+            cams.extend(
+                interpolate_simple(new_control_points[i], new_control_points[i + 1], focal, metric, nn, **kwargs))
         return cams
 
-    with Pool() as pool:
+    # with Pool() as pool:
+    if True:
         if method == "CatmullRom":
-            n_control_points = len(control_points)
-            cams = pool.map(partial(interpolate_CatmullRom, control_points=control_points, knots=normalized_knots,
+            n_control_points = len(new_control_points)
+            """
+            cams = pool.map(partial(interpolate_CatmullRom, control_points=new_control_points, knots=normalized_knots,
                                     focal=focal, metric=metric, **kwargs),
                             np.linspace(0, 1, n))
+            """
+            cams = [interpolate_CatmullRom(t=t, control_points=new_control_points, knots=normalized_knots,
+                                           focal=focal, metric=metric, **kwargs) for t in np.linspace(0, 1, n)]
 
-            for i in range(4):
-                control_points, normalized_knots = disambiguate_spline(control_points, normalized_knots, cams)
-                if n_control_points == len(control_points):
-                    break
-                n_control_points = len(control_points)
-                cams = pool.map(partial(interpolate_CatmullRom, control_points=control_points, knots=normalized_knots,
-                                        focal=focal, metric=metric, **kwargs),
-                                np.linspace(0, 1, n))
+            if "3DImageFlowGeodesic" not in metric and False:
+                control_points = new_control_points
+                for i in range(4):
+                    control_points, normalized_knots = disambiguate_spline(control_points, normalized_knots, cams)
+                    print("Kontrollpunkte:", n_control_points, len(control_points), len(normalized_knots))
+                    if n_control_points == len(control_points):
+                        break
+                    n_control_points = len(control_points)
+                    """
+                    cams = pool.map(partial(interpolate_CatmullRom, control_points=control_points, knots=normalized_knots,
+                                            focal=focal, metric=metric, **kwargs),
+                                    np.linspace(0, 1, n))
+                    """
+                    cams = [interpolate_CatmullRom(t=t, control_points=control_points, knots=normalized_knots,
+                                                   focal=focal, metric=metric, **kwargs) for t in np.linspace(0, 1, n)]
         elif method == "Bezier":
-            cams = pool.map(partial(interpolate_deCasteljau, control_points=control_points, focal=focal,
+            """
+            cams = pool.map(partial(interpolate_deCasteljau, control_points=new_control_points, focal=focal,
                                     metric=metric, **kwargs),
                             np.linspace(0, 1, n))
+            """
+            cams = [interpolate_deCasteljau(t=t, control_points=new_control_points, focal=focal,
+                                            metric=metric, **kwargs) for t in np.linspace(0, 1, n)]
         else:
             raise ValueError(f"Method {method} unknown")
 
+        """
         pool.close()
         pool.join()
+        """
 
+    if "generate_earth_file" in kwargs and kwargs["generate_earth_file"]:
+        print("Exporting data...")
+        earth = kwargs["move_around_object"]
+        earth_position = earth.location
+        earth_radius = (earth.matrix_world @ (earth.data.vertices[0].co - earth.location)).length
+        export_geoposition_data(cams, n, metric, kwargs["file_path"], earth_center=earth_position,
+                                earth_radius=earth_radius)  # [np.array(cam["position"]) for cam in cams])
+        print("Exporting finished")
     return cams

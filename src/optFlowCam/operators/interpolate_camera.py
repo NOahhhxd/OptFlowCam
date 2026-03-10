@@ -6,9 +6,9 @@ from ..objects.camera import add_camera_object, update_camera, animate_camera
 from ..objects.path_geometry import add_path_object, update_path
 from ..objects.frustum_geometry import add_frustum_object, animate_frustum
 
-
 from ..utility import cam_to_sample, lookat_path_from_camera_path
 from ..interpolation import interpolate_keyframes
+
 
 class OFC_OT_InterpolateCamera(bpy.types.Operator):
     # custom ID
@@ -45,7 +45,7 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
 
         ## Uncomment for debug purposes if the operator crashed
         ## and cannot be started from UI anymore
-        return True
+        # return True
 
         if (len(props.keyframes) >= 2 and
                 all([k.cam != None for k in props.keyframes]) and
@@ -122,12 +122,25 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
 
         wm.progress_update(20)
 
+        if "geodesic" in props.metric and props.method != 'Linear' and not props.is_earth:
+            self.report({'ERROR_INVALID_INPUT'}, "No extrapolation of general geodesics implemented.")
+            self.quit(context)
+            return {'CANCELLED'}
+
+        earth_radius = None
+        if props.is_earth or props.metric == "3DImageFlowGeodesicEarthRot":
+            # later change
+            earth_radius = 100
+
+        print("begin")
+
         # calculate path
         try:
             self._path = interpolate_keyframes(cam_samples, knots, cam_samples[0]["focal"],
                                                props.metric, props.method, n_frames,
                                                rho=props.rho,
-                                               min_greedy_point_difference=min_greedy_point_difference)
+                                               min_greedy_point_difference=min_greedy_point_difference,
+                                               is_earth=props.is_earth, earth_radius=earth_radius, weight=props.weight)
         except Exception as e:
             print(e)
             traceback.print_exc()
@@ -153,8 +166,11 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
         elif curr_frame > frame_end:
             update_camera(cam_samples[-1], cam_obj)
         else:
-            sample = self._path[curr_frame - frame_start]
-            update_camera(sample, cam_obj)
+            if 0 <= curr_frame - frame_start < len(self._path):
+                sample = self._path[curr_frame - frame_start]
+                update_camera(sample, cam_obj)
+            else:
+                print(f"{curr_frame - frame_start} is invalid idx for path with len = {len(self._path)}")
 
         wm.progress_end()
 
@@ -196,12 +212,18 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
 
         context.scene.OFC.op_props.operator_running = False
         context.scene.OFC.op_props.property_unset("temp_cam")
+
+
 # ------------------------------------------------------------------------------
 
 classes = [OFC_OT_InterpolateCamera]
+
+
 def register():
     for cl in classes:
         bpy.utils.register_class(cl)
+
+
 def unregister():
     for cl in classes:
         bpy.utils.unregister_class(cl)

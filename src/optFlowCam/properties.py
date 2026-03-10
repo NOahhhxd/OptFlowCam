@@ -33,6 +33,9 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
         ("3DImageFlowGeodesicGreedy", "3DImageFlow with greedy modified geodesic look-at path",
          "Optimal spline based on minimizing 3D image flow in camera frustum with greedy modified geodesic look-at path",
          "MESH_CUBE", 4),
+        ("3DImageFlowGeodesicEarthRot", "3DImageFlow with geodesic look-at path and multiple rotations according pols",
+         "Optimal spline based on minimizing 3D image flow in camera frustum around the earth with multiple axis of rotation.",
+         "MESH_CUBE", 5),
     ]
 
     parametrization_options = [
@@ -89,11 +92,20 @@ class OFC_PG_OptimalPathInitialization(bpy.types.PropertyGroup):
         description="Make the frustum geometry of the camera available when confirming the path?",
         default=False)
 
+    is_earth: bpy.props.BoolProperty(
+        name="Is it the earth?",
+        description="Make spherical inter-/extrapolation possible.",
+        default=False)
+
+    weight: bpy.props.FloatProperty(
+        name="Weight",
+        description="Weight of the rotation-spline",
+        default=1.0)
+
     render_animation: bpy.props.BoolProperty(
         name="Render animation",
         description="Should the camera be rendered?",
-        default=True
-    )
+        default=True)
     generate_earth_file: bpy.props.BoolProperty(
         name="Generate Earth File",
         description="Is the object of interest spherical in shape?",

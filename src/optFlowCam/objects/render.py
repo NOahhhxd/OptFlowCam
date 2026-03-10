@@ -110,4 +110,4 @@ def combine_clips(file_paths, overview_path, path, context):
     bpy.ops.render.render(animation=True)
     scene.sequence_editor_clear()
     with open(f"{path}\\solution.txt", "w+") as f:
-        f.write("\n".join([f"{idx + 1}{clip.split("\\")[-1]}" for idx, clip in enumerate(file_paths)]))
+        f.write("\n".join([f"{idx + 1}"+clip.split("\\")[-1] for idx, clip in enumerate(file_paths)]))

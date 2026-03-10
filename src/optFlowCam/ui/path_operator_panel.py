@@ -33,6 +33,8 @@ class OFC_PT_OptimalPathOperatorPanel(bpy.types.Panel):
 
         layout.prop(init_props, "method")
         layout.prop(init_props, "metric")
+        layout.prop(init_props, "is_earth")
+        layout.prop(init_props, "weight")
 
         layout.separator()
 

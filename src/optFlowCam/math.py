@@ -61,34 +61,34 @@ def get_rotation(start: dict, end: dict) -> tuple:
     R2 = np.array([vecs2[1], vecs2[2], vecs2[0]]).T
 
     # rotation matrix around z-axis
-    R_beta = lambda t, beta: np.array([[np.cos(t*beta), -np.sin(t*beta), 0.0], 
-                                       [np.sin(t*beta),  np.cos(t*beta), 0.0], 
+    R_beta = lambda t, beta: np.array([[np.cos(t * beta), -np.sin(t * beta), 0.0],
+                                       [np.sin(t * beta), np.cos(t * beta), 0.0],
                                        [0.0, 0.0, 1.0]], dtype=float)
 
     axis = None
     beta_end = None
 
-    eigenvals, eigenvecs = np.linalg.eig(R2.T-R1.T)
+    eigenvals, eigenvecs = np.linalg.eig(R2.T - R1.T)
 
     # tolerance has to be so high because some cases produce eigenvalues that are not zero
-    indices = np.where(np.isclose(eigenvals.real,0, atol=1e-7))
+    indices = np.where(np.isclose(eigenvals.real, 0, atol=1e-5)) # mit Theisel absprechen???
     if len(indices[0]) == 0:
         raise ValueError("Cannot determine axis of rotation")
-    
-    axis = eigenvecs[:,indices[0][0]].flatten()
-    
+
+    axis = eigenvecs[:, indices[0][0]].flatten()
+
     # need to normalize in case there was an imaginary part and
     # the real part alone is not unit length anymore
-    axis = normalized( axis.real )
+    axis = normalized(axis.real)
 
     # in case the chosen axis is identical to the view vector
     # we need to determine the rest of the matrix with another vector
     if np.isclose(np.linalg.norm(np.cross(axis, vecs1[0])), 0):
-        c1 = normalized( np.cross(vecs1[1], axis) )
-        c2 = normalized( np.cross(axis, c1) )
+        c1 = normalized(np.cross(vecs1[1], axis))
+        c2 = normalized(np.cross(axis, c1))
     else:
-        c2 = normalized( np.cross(axis, vecs1[0]) )
-        c1 = normalized( np.cross(c2, axis) )
+        c2 = normalized(np.cross(axis, vecs1[0]))
+        c1 = normalized(np.cross(c2, axis))
 
     # matrix that rotates "axis" so that it is aligned with the z-axis
     # and v1 so that its y-coordinate is zero
