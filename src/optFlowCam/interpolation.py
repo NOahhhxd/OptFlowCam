@@ -108,7 +108,7 @@ def interpolate_matrices(start, end, earth_radius, t, weight):
 
 
 def interpolate_matrices_2(start, end, t):
-    _, R_f = get_rotation(start, end)  ##
+    _, R_f = get_rotation(start, end)
     R = R_f(t)
     up = R[:, 1]
     view = R[:, 2]
@@ -201,9 +201,6 @@ def lift_path(path, obj, factor=0.00001):
 
 def calculate_sphere_lookat(position, view_direction, center, radius) -> Vector:
     forward = -view_direction
-    # up = np.array(cam["up"])
-    # pos = position - center
-    # RM = np.array([np.cross(up, forward), up, forward]).T
     E = position - center
     A = forward
     ae = np.cross(A, E)
@@ -267,8 +264,6 @@ class InterpolateGeodesic:
             self.sphere_data = (center, radius)
 
             self.start_loc = calculate_sphere_lookat(start_eyepoint, start_view_direction, center, radius)
-            # self.q1 = Quaternion([0]+list(start_loc.normalized()[:]))
-            # self.q2 = Quaternion([0]+list(end_loc.normalized()[:]))
             self.end_loc = calculate_sphere_lookat(end_eyepoint, end_view_direction, center, radius)
             self.arc_length = (self.start_loc - center).normalized() @ (self.end_loc - center).normalized()
             self.arc_length = max(min(self.arc_length, 1), -1)
@@ -413,11 +408,10 @@ def get_zoom_pan_parameter_functions(w0: float, w1: float,
 
 
     #reinnehmen assert not np.isnan(r0) and not np.isnan(r1)
-    """
     if np.isnan(r0) or  np.isnan(r1):
         print(r0,r1, w0,w1,u0,u1)
         assert False
-    """
+
     S = (r1 - r0) / rho
 
     us = lambda s: w0 / (rho ** 2) * np.cosh(r0) * np.tanh(rho * s + r0) - w0 / (rho ** 2) * np.sinh(r0) + u0
@@ -503,6 +497,18 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         start = kwargs["start"]
         end = kwargs["end"]
 
+        if "3DImageFlowGeodesic" in metric:
+            idx = find_fitting_geodesic(start, end)
+            if idx == -1:
+                interpolate_geodesics.append(
+                    InterpolateGeodesic(start, end, greedy_method=False, focal=start["focal"],
+                                        is_sphere="3DImageFlowGeodesicEarthRot" in metric or kwargs.get('is_earth',
+                                                                                                        False)))
+                start = resize(start, 0, interpolate_geodesics[-1])
+                end = resize(end, 1, interpolate_geodesics[-1])
+                interpolate_geodesics[-1].set_start_end(start, end)
+                idx = len(interpolate_geodesics) - 1
+
         # assure orthonormal camera reference frame
         pos1, view1, up1, right1, s1 = unpack_camera(start)
         pos2, view2, up2, right2, s2 = unpack_camera(end)
@@ -586,15 +592,14 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         if "original_end" in kwargs:
             end = kwargs["original_end"]
         """
-        idx = find_fitting_geodesic(start, end)
-        assert idx > -1, "No fitting geodesic found"
+
         # u1 = 1
         u1 = interpolate_geodesics[idx].get_distance()  # np.linalg.norm(look_diff)
         # assert u1 != 0, f"start: {start}    end: {end}"
         # look_diff_n = np.zeros(3) if u1 < 1e-14 else normalized(look_diff)
         u, w = get_zoom_pan_parameter(t, w0, w1, u0, u1, rho)
         if w == 0:
-            print(start, end)
+            print("error potential: ",start, end)
         # look_at_point = m(u)
         # look_diff_n = interpolate_geodesics.get_distance()
         # cam = cam_from_params2(u, w, R_f(t), focal, look_at_point, look_diff_n)
@@ -858,13 +863,16 @@ def interpolate_CatmullRom(t: float, control_points: list, knots: list,
 
             start = segment_control_points[i]
             end = segment_control_points[i + 1]
+            """
             if "3DImageFlowGeodesic" in metric and find_fitting_geodesic(start, end) == -1:
                 interpolate_geodesics.append(
                     InterpolateGeodesic(start, end, greedy_method=True, focal=start["focal"],
                                         is_sphere="3DImageFlowGeodesicEarthRot" in metric or kwargs.get('is_earth',
                                                                                                         False)))
+                start = resize(start, 0, interpolate_geodesics[-1])
+                end = resize(end, 1, interpolate_geodesics[-1])
                 interpolate_geodesics[-1].set_start_end(start, end)
-            """
+
             if interpolate_geodesics and start == end:
                 cam = interpolate_t(s, focal, metric, start=original_start, end=original_end, **kwargs)
             else:
@@ -876,7 +884,6 @@ def interpolate_CatmullRom(t: float, control_points: list, knots: list,
                 print(j, i, segment_control_points, cam)
             """
             segment_control_points[i] = cam
-            # current_t[i] = s
 
     return segment_control_points[0]
 
@@ -966,7 +973,6 @@ def interpolate_keyframes(control_points: list, knots: list,
 
     new_control_points = []
     if "3DImageFlowGeodesic" in metric:
-        # global interpolate_geodesics
         greedy = metric == "3DImageFlowGeodesicGreedy"
         min_greedy_point_difference = 2
         if "min_greedy_point_difference" in kwargs:
@@ -1056,6 +1062,6 @@ def interpolate_keyframes(control_points: list, knots: list,
         earth_position = earth.location
         earth_radius = (earth.matrix_world @ (earth.data.vertices[0].co - earth.location)).length
         export_geoposition_data(cams, n, metric, kwargs["file_path"], earth_center=earth_position,
-                                earth_radius=earth_radius)  # [np.array(cam["position"]) for cam in cams])
+                                earth_radius=earth_radius)
         print("Exporting finished")
     return cams
