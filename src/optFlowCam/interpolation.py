@@ -23,7 +23,7 @@ from .objects.GoogleEarthFile import GoogleEarthStudio, extract_rotation, camMat
 def slerp(p1, p2, t, arc_length):
     # math.acos((p1 @ p2) / (p1.length * p2.length))
     angle_between = math.acos(arc_length)
-    if True: #back angle_between < math.pi / 360:
+    if angle_between < math.pi / 360:
         return (1 - t) * p1 + t * p2  # p1 + t*(p2-p1) => p1 - t*p1 + t*p2 => ...
 
     return (math.sin((1 - t) * angle_between) / math.sin(angle_between) * p1
@@ -204,6 +204,7 @@ def calculate_sphere_lookat(position, view_direction, center, radius) -> Vector:
     E = position - center
     A = forward
     ae = np.cross(A, E)
+    print(ae,A)
     dd = -np.dot(A, E) + math.sqrt(radius ** 2 * np.dot(A, A) - np.dot(ae, ae))
     lookat = position + forward * dd
     return lookat  # , lookat.length, dd
