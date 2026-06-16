@@ -136,12 +136,35 @@ class OFC_PT_CreateGoogleEarthCamPanel(bpy.types.Panel):
         layout.operator('ofc.create_earth_cam', text='Create Cam')
 
 
+class OFC_PT_GenerateEarthFileFromCamera(bpy.types.Panel):
+    bl_idname = "OFC_PT_GenerateEarthFileFromCamera"
+    bl_parent_id = "OFC_PT_OptimalPathOperatorPanel"
+    bl_label = "Generate earth-file from camera"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_context = 'objectmode'
+    bl_category = "OptFlowCam"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+
+        cam_props = context.scene.OFC.convert_cam_props
+
+        layout.prop(cam_props, "cam")
+        layout.prop(cam_props, "name")
+        layout.prop(cam_props, "file_path")
+        layout.prop(cam_props, "num_frames")
+        layout.operator('ofc.earthfile_from_cam', text='Create File from Cam')
+
+
 # ------------------------------------------------------------------------------
 
 classes = [OFC_PT_OptimalPathOperatorPanel,
            OFC_PT_OptimalPathAdvancedOptionsPanel,
            OFC_PT_OptimalPathCompareOptionsPanel,
-           OFC_PT_CreateGoogleEarthCamPanel
+           OFC_PT_CreateGoogleEarthCamPanel,
+           OFC_PT_GenerateEarthFileFromCamera
            ]
 
 

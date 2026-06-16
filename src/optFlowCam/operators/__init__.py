@@ -1,5 +1,5 @@
 modules = ['insert_keyframe', 'interpolate_camera', 'redistribute_frames',
-           'reset_property', 'compare_cams', 'createEarthCam']
+           'reset_property', 'compare_cams', 'createEarthCam', 'generate_earthFile_from_cam']
 
 from .. import register_modules
 

@@ -154,6 +154,10 @@ class OFC_OT_InterpolateCamera(bpy.types.Operator):
         cam_path_obj = bpy.data.objects[self.cam_path]
         update_path(cam_path_obj, self._path)
 
+        # safe view,up,right in a file
+        # for each save x,y,z-coordinate -> plot each of them individually
+
+
         look_path = lookat_path_from_camera_path(self._path)
         lookat_path_obj = bpy.data.objects[self.lookat_path]
         update_path(lookat_path_obj, look_path)

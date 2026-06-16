@@ -167,6 +167,19 @@ class OFC_PG_GoogleEarthCamProperties(bpy.types.PropertyGroup):
     rotZ: bpy.props.FloatProperty(name="Roll", description="What is the cameras roll in degrees?")
 
 
+class OFC_PG_ConvertCamToGoogleEarthFileProperties(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="File name", description="File name")
+    cam: bpy.props.PointerProperty(
+        name="Selected Object",
+        description="Which object should the camera move around?",
+        type=bpy.types.Object
+    )
+    file_path: bpy.props.StringProperty(name="Exporting Directory", description="Directory to save the generated file",
+                                        subtype="DIR_PATH", default="")
+    num_frames: bpy.props.IntProperty(name="Number of Frames",
+                                      description="How many frames should the generated clip have?", default=300)
+
+
 class OFC_PG_OptimalPathOperatorProperties(bpy.types.PropertyGroup):
     operator_running: bpy.props.BoolProperty(
         default=False)
@@ -194,14 +207,19 @@ class OFC_PG_PropertyCollection(bpy.types.PropertyGroup):
         description=".",
         type=OFC_PG_GoogleEarthCamProperties)
 
+    convert_cam_props: bpy.props.PointerProperty(
+        name="Operator Properties",
+        description=".",
+        type=OFC_PG_ConvertCamToGoogleEarthFileProperties)
+
 
 # ------------------------------------------------------------------------------
 
 classes = [OFC_PG_OptimalPathInitialization,
            OFC_PG_OptimalPathOperatorProperties,
            OFC_PG_GoogleEarthCamProperties,
-           OFC_PG_PropertyCollection,
-           ]
+           OFC_PG_ConvertCamToGoogleEarthFileProperties,
+           OFC_PG_PropertyCollection]
 
 
 def register():

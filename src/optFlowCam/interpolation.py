@@ -21,19 +21,19 @@ from .objects.GoogleEarthFile import GoogleEarthStudio, extract_rotation, camMat
 
 
 def slerp(p1, p2, t, arc_length):
-    # math.acos((p1 @ p2) / (p1.length * p2.length))
     angle_between = math.acos(arc_length)
-    if angle_between < math.pi / 360:
-        return (1 - t) * p1 + t * p2  # p1 + t*(p2-p1) => p1 - t*p1 + t*p2 => ...
+    if angle_between < math.pi / 180 / 4:
+        return (1 - t) * p1 + t * p2
 
     return (math.sin((1 - t) * angle_between) / math.sin(angle_between) * p1
             + math.sin(t * angle_between) / math.sin(angle_between) * p2)
 
 
 def interpolate_points_spherical(p1, p2, middle, t, arc_length, radius):
-    p1_n, p2_n = (p1 - middle).normalized(), (p2 - middle).normalized()
+    p1_n, p2_n = normalized(p1 - middle), normalized(p2 - middle)
     p = slerp(p1_n, p2_n, t, arc_length)
-    return p/np.linalg.norm(p) * radius + middle
+    # return p / np.linalg.norm(p) * radius + middle
+    return normalized(p) * radius + middle
 
 
 def weighted_decasteljeau(points, weights, t):
@@ -51,6 +51,24 @@ def weighted_decasteljeau(points, weights, t):
 
 
 def calculate_north_alignment(cam, earth_radius):
+    # maybe dir is just vector to in plane of current height
+    # forward = cam["view"]
+    """
+    up = Vector([0, 0, 1])
+    x,y,z = cam["position"]
+    forward = -Vector([x,y,0]).normalized()
+    # forward = Vector([forward[0], forward[1], 0]).normalized()
+    right = normalized(np.cross(up, forward))
+    return {
+        'view': list(forward),
+        'up': list(up),
+        'right': list(right),
+        'position': cam["position"],
+        'focal': 1.639344262295082,
+        'frustum_scale': cam["frustum_scale"]
+    }
+    # right = up x forward
+    """
     # calculate spherical coordinates
     longitude, latitude, altitude, _, _, _ = extract_rotation(cam, earth_radius=earth_radius)
     """
@@ -61,8 +79,8 @@ def calculate_north_alignment(cam, earth_radius):
     altitude = get_height(altitude, earth_radius)
     """
     # calculate rotation-matrix from these values with pan/tilt/roll = 0
-    matrix, scale = camMatrixByPosition(math.degrees(longitude), math.degrees(latitude), altitude, 0, 0, 0,
-                                        earth_radius)
+    matrix, distance = camMatrixByPosition(math.degrees(latitude), math.degrees(longitude), altitude, 0, 0, 0,
+                                           r=earth_radius)
     """
     cam_obj.matrix_world = matrix
     cam_obj.scale = scale * Vector((1, 1, 1))
@@ -80,13 +98,40 @@ def calculate_north_alignment(cam, earth_radius):
         'frustum_scale' : max(list(cam.scale))
     }
     """
+
+    """
+    f = 1.639344262295082
+    scale = -distance/f
+
+    cam_obj.data.lens = f * cam_obj.data.sensor_width
+    cam_obj.matrix_world = matrix
+    cam_obj.scale = scale * Vector((1, 1, 1))
+    
+    
+    mat = cam.matrix_world
+    pos, rot, _ = mat.decompose()
+    forw = rot @ Vector((0,0,-1))
+    up = rot @ Vector((0,1,0))
+
+    c = {
+        'position': list(pos),
+        'view' : list(forw),
+        'up' : list(up),
+        'focal' : get_focal_length(cam),
+        'frustum_scale' : max(list(cam.scale))
+    }
+    """
+
+    f = 1.639344262295082
+    scale = -distance / f
+
     # mat = cam.matrix_world
     pos, rot, _ = matrix.decompose()
-    forw = rot @ Vector((0, 0, -1))
-    up = rot @ Vector((0, 1, 0))
-    _, _, right = get_orthonormal_basis({'view': forw,
-                                         'up': up})
-    return {
+    forw = normalized(rot @ Vector((0, 0, -1)))
+    up = normalized(rot @ Vector((0, 1, 0)))
+
+    right = normalized(np.cross(up, forw))
+    cam = {
         'position': list(pos),
         'view': list(forw),
         'up': list(up),
@@ -94,20 +139,36 @@ def calculate_north_alignment(cam, earth_radius):
         'focal': 1.639344262295082,
         'frustum_scale': scale
     }
+    return cam
 
 
-def interpolate_matrices(start, end, earth_radius, t, weight):
+def interpolate_matrices(start, end, earth_radius, weight, t):
     start_north = calculate_north_alignment(start, earth_radius)
     end_north = calculate_north_alignment(end, earth_radius)
     cam = weighted_rotation_interpolation([start, start_north, end_north, end], [1, weight, weight, 1], t)
     vecs = [cam[key] for key in ["view", "right", "up"]]
 
+    # pos, view, up, right, s = unpack_camera(cam)
+    # vecs =
+
     # basis matrix for start
     R = np.array([vecs[1], vecs[2], vecs[0]]).T
+    """
+    right = cam["right"]
+    up = cam["up"]
+    view = cam["view"]
+    R = np.array([right, up, view]).T
+    """
+    """
+        up = R[:, 1]
+    view = R[:, 2]
+    right = R[:, 0]
+    """
     return R
 
 
 def interpolate_matrices_2(start, end, t):
+    print(f"Rotation between: {start} and \n{end} \nat t={t}")
     _, R_f = get_rotation(start, end)
     R = R_f(t)
     up = R[:, 1]
@@ -121,8 +182,8 @@ def weighted_rotation_interpolation(matrices, weights, t):
     w = [i for i in weights]
     for idx in range(1, len(matrices) + 1):
         for i in range(0, len(matrices) - idx):
-            t_normalized = (w[i + 1] * t) * ((1 - t) * w[i] + t * w[i + 1])
-            matrices[i] = interpolate_matrices_2(matrices[i], matrices[i + 1], t_normalized)
+            t_normalized = (w[i + 1] * t) / ((1 - t) * w[i] + t * w[i + 1])
+            matrices[i] = interpolate_matrices_2(matrices[i], matrices[i + 1], t)
             w[i] = (1 - t) * w[i] + t * w[i + 1]
     return matrices[0]
 
@@ -204,7 +265,7 @@ def calculate_sphere_lookat(position, view_direction, center, radius) -> Vector:
     E = position - center
     A = forward
     ae = np.cross(A, E)
-    print(ae,A)
+    print(ae, A)
     dd = -np.dot(A, E) + math.sqrt(radius ** 2 * np.dot(A, A) - np.dot(ae, ae))
     lookat = position + forward * dd
     return lookat  # , lookat.length, dd
@@ -266,10 +327,12 @@ class InterpolateGeodesic:
 
             self.start_loc = calculate_sphere_lookat(start_eyepoint, start_view_direction, center, radius)
             self.end_loc = calculate_sphere_lookat(end_eyepoint, end_view_direction, center, radius)
-            self.arc_length = (self.start_loc - center).normalized() @ (self.end_loc - center).normalized()
+            # self.arc_length = (self.start_loc - center).normalized() @ (self.end_loc - center).normalized()
+            self.arc_length = normalized(self.start_loc - center) @ normalized(self.end_loc - center)
             self.arc_length = max(min(self.arc_length, 1), -1)
             print(f"arc length: {self.arc_length}")
-            self.distance = (self.end_loc-self.start_loc).length #back radius * math.acos(self.arc_length)
+            self.distance = radius * math.acos(
+                self.arc_length)  # np.linalg.norm(self.end_loc - self.start_loc)#.length  # back radius * math.acos(self.arc_length)
 
         print("Distance: ", self.distance, is_sphere)
 
@@ -310,8 +373,8 @@ class InterpolateGeodesic:
             else:
                 return next_element[0]
         else:
-            return interpolate_points_spherical(self.start_loc, self.end_loc, self.sphere_data[0], t, self.arc_length,
-                                                self.sphere_data[1])
+            center, radius = self.sphere_data
+            return interpolate_points_spherical(self.start_loc, self.end_loc, center, t, self.arc_length, radius)
             # return self.sphere_data[0]*Vector(slerpQuaternion(self.q1, self.q2, t)[1:])
 
     def raycast(self, start, direction) -> tuple[Any, Any, Any]:
@@ -324,7 +387,6 @@ class InterpolateGeodesic:
         return obj_0, face_idx, loc
 
     def find_geodesic_path_between(self, start_idx, end_idx):
-        # print("calc path")
         distance, path = self.geodesic_calc.geodesicDistance(end_idx, start_idx)
         if self.greedy_geodesic:
             path = lift_path(path, self.obj, 0.00001)
@@ -368,8 +430,8 @@ def get_zoom_pan_parameter_functions(w0: float, w1: float,
     formulas we used in our paper.
     '''
     # see
-    # J. J. van Wijk and W. A. A. Nuij, “Smooth and efficient zooming and panning,” 
-    # in IEEE Symposium on Information Visualization 2003 (IEEE Cat. No.03TH8714), 2003-10, pp. 15–23. 
+    # J. J. van Wijk and W. A. A. Nuij, “Smooth and efficient zooming and panning,”
+    # in IEEE Symposium on Information Visualization 2003 (IEEE Cat. No.03TH8714), 2003-10, pp. 15–23.
     # doi: 10.1109/INFVIS.2003.1249004.
 
     # no panning
@@ -407,10 +469,9 @@ def get_zoom_pan_parameter_functions(w0: float, w1: float,
     r0 = ri(b0)
     r1 = ri(b1)
 
-
-    #reinnehmen assert not np.isnan(r0) and not np.isnan(r1)
-    if np.isnan(r0) or  np.isnan(r1):
-        print(r0,r1, w0,w1,u0,u1)
+    # reinnehmen assert not np.isnan(r0) and not np.isnan(r1)
+    if np.isnan(r0) or np.isnan(r1):
+        print(r0, r1, w0, w1, u0, u1)
         assert False
 
     S = (r1 - r0) / rho
@@ -437,7 +498,7 @@ def get_zoom_pan_parameters(n: int, w0: float, w1: float,
                             u0: float, u1: float,
                             rho: float = np.sqrt(2)) -> tuple:
     '''
-    Returns the parameter list for u and w for the range [0,1] divided 
+    Returns the parameter list for u and w for the range [0,1] divided
     into n samples.
     '''
 
@@ -494,6 +555,7 @@ def interpolate_along_earth_axis(start, end, earth_radius, weight):
 
 
 def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
+    print(t)
     if "start" in kwargs and "end" in kwargs:
         start = kwargs["start"]
         end = kwargs["end"]
@@ -532,18 +594,19 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         right2 = kwargs["right2"]
         s2 = kwargs["s2"]
 
-    if (False  # for Debugging purpose
-            and ("3DImageFlowGeodesicEarthRot" in metric
-                 and "earth_radius" in kwargs and kwargs["earth_radius"]
-                 and "weight" in kwargs and kwargs["weight"])):
-        u, _ = get_zoom_pan_parameter(1 / 3, 1, 1, 0, 1, kwargs["rho"])
+    if (  # False and   # for Debugging purpose
+            ("3DImageFlowGeodesicEarthRot" in metric
+             and "earth_radius" in kwargs and kwargs["earth_radius"]
+             and "weight" in kwargs and kwargs["weight"])):
+        # u, _ = get_zoom_pan_parameter(1 / 3, 1, 1, 0, 1, kwargs["rho"])
         idx = find_fitting_geodesic(start, end)
         assert idx > -1, "No fitting geodesic found"
-        lookat_start = m(u, idx)
-        lookat_end = m(1 - u, idx)
-        R_f = interpolate_along_earth_axis({"view": view1, "up": up1, "right": right1, "position": lookat_start},
-                                           {"view": view2, "up": up2, "right": right2, "position": lookat_end},
-                                           kwargs["weight"], kwargs["earth_radius"])
+        lookat_start = m(0, idx)
+        lookat_end = m(1, idx)
+        R_f = interpolate_along_earth_axis(
+            {"view": view1, "up": up1, "right": right1, "position": lookat_start, "frustum_scale": s1},
+            {"view": view2, "up": up2, "right": right2, "position": lookat_end, "frustum_scale": s2},
+            kwargs["earth_radius"], kwargs["weight"])
     else:
         if not "R_f" in kwargs:
             _, R_f = get_rotation({"view": view1, "up": up1, "right": right1},
@@ -583,7 +646,7 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
     elif "3DImageFlowGeodesic" in metric:
         rho = kwargs["rho"]
 
-        #reinnehmen assert not np.isnan(s1), start
+        # reinnehmen assert not np.isnan(s1), start
         w0 = s1
         w1 = s2
         u0 = 0
@@ -600,7 +663,7 @@ def interpolate_t(t: float, focal: float, metric: str, **kwargs) -> dict:
         # look_diff_n = np.zeros(3) if u1 < 1e-14 else normalized(look_diff)
         u, w = get_zoom_pan_parameter(t, w0, w1, u0, u1, rho)
         if w == 0:
-            print("error potential: ",start, end)
+            print("error potential: ", start, end)
         # look_at_point = m(u)
         # look_diff_n = interpolate_geodesics.get_distance()
         # cam = cam_from_params2(u, w, R_f(t), focal, look_at_point, look_diff_n)
@@ -699,7 +762,7 @@ def cam_from_params2(u: float, w: float,
         "frustum_scale": scale,
         "focal": focal
     }
-    #reinnehmen assert scale != 0, print(cam)
+    # reinnehmen assert scale != 0, print(cam)
     return cam
 
 
@@ -740,7 +803,8 @@ def resize(cam, t, geodesic):
         coords = Vector(geodesic.interpolate(t))
 
     pos = Vector(cam["position"])
-    cam["frustum_scale"] = (coords - pos).length / cam["focal"]
+    # cam["frustum_scale"] = (coords - pos).length / cam["focal"]
+    cam["frustum_scale"] = np.linalg.norm(coords - pos) / cam["focal"]
     return cam
 
 
@@ -852,8 +916,8 @@ def interpolate_CatmullRom(t: float, control_points: list, knots: list,
         segment_knots) == 4, f"Should be 4 but is {len(segment_control_points)} and {len(segment_knots)}"
 
     # see
-    # C. Yuksel, S. Schaefer, and J. Keyser, “On the parameterization of Catmull-Rom curves,” 
-    # in 2009 SIAM/ACM Joint Conference on Geometric and Physical Modeling, 2009-10. 
+    # C. Yuksel, S. Schaefer, and J. Keyser, “On the parameterization of Catmull-Rom curves,”
+    # in 2009 SIAM/ACM Joint Conference on Geometric and Physical Modeling, 2009-10.
     # doi: 10.1145/1629255.1629262.
     for j in range(3):
         for i in range(len(segment_control_points) - j - 1):

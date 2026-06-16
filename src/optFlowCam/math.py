@@ -60,6 +60,9 @@ def get_rotation(start: dict, end: dict) -> tuple:
     R1 = np.array([vecs1[1], vecs1[2], vecs1[0]]).T
     R2 = np.array([vecs2[1], vecs2[2], vecs2[0]]).T
 
+    print("Rot1: ", R1@R1.T)
+    print("Rot2: ", R2@R2.T)
+
     # rotation matrix around z-axis
     R_beta = lambda t, beta: np.array([[np.cos(t * beta), -np.sin(t * beta), 0.0],
                                        [np.sin(t * beta), np.cos(t * beta), 0.0],
@@ -69,9 +72,10 @@ def get_rotation(start: dict, end: dict) -> tuple:
     beta_end = None
 
     eigenvals, eigenvecs = np.linalg.eig(R2.T - R1.T)
-
+    print(f"Eigenwerte: {eigenvals}\nEigenvektoren:{eigenvecs}")
     # tolerance has to be so high because some cases produce eigenvalues that are not zero
-    indices = np.where(np.isclose(eigenvals.real, 0, atol=1e-5)) # mit Theisel absprechen???
+    indices = np.where(np.isclose(eigenvals.real, 0, atol=1e-3))
+
     if len(indices[0]) == 0:
         raise ValueError("Cannot determine axis of rotation")
 
